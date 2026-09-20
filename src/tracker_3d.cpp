@@ -48,6 +48,12 @@ void Track3D::predict(double dt) {
     // Extrapolate covariance: P = F * P * F^T + Q
     P_ = F * P_ * F.transpose() + Q;
 
+    // Ensure symmetry and clamp diagonal covariance to prevent divergence
+    P_ = 0.5f * (P_ + P_.transpose());
+    for (int k = 0; k < 9; ++k) {
+        P_(k, k) = std::clamp(P_(k, k), 1e-4f, 100.0f);
+    }
+
     age_++;
     lost_frames_++;
 }
@@ -84,9 +90,20 @@ void Track3D::update(const Detection3DInput& det, double timestamp) {
     // Updated state: x = x + K*y
     x_ = x_ + K * y;
 
+    // Clamped velocity updates to AMR physical dynamics (max 5.0 m/s)
+    x_(3) = std::clamp(x_(3), -5.0f, 5.0f);
+    x_(4) = std::clamp(x_(4), -5.0f, 5.0f);
+    x_(5) = std::clamp(x_(5), -5.0f, 5.0f);
+
     // Updated covariance: P = (I - K*H) * P
     Eigen::Matrix<float, 9, 9> I = Eigen::Matrix<float, 9, 9>::Identity();
     P_ = (I - K * H) * P_;
+
+    // Ensure symmetry and clamp covariance
+    P_ = 0.5f * (P_ + P_.transpose());
+    for (int k = 0; k < 9; ++k) {
+        P_(k, k) = std::clamp(P_(k, k), 1e-4f, 100.0f);
+    }
 
     hits_++;
     lost_frames_ = 0;
@@ -172,6 +189,11 @@ std::vector<TrackedObject3D> MultiObjectTracker3D::update(
 
         for (size_t j = 0; j < detections.size(); ++j) {
             if (matched_detections[j]) continue;
+            // Reject unmeasured depth or non-finite coordinates
+            if (!detections[j].is_valid_3d || !std::isfinite(detections[j].x) ||
+                !std::isfinite(detections[j].y) || !std::isfinite(detections[j].z)) {
+                continue;
+            }
 
             Eigen::Vector3f det_pos(detections[j].x, detections[j].y, detections[j].z);
             float dist = (track_pos - det_pos).norm();
@@ -193,9 +215,10 @@ std::vector<TrackedObject3D> MultiObjectTracker3D::update(
         }
     }
 
-    // 3. Create new tracks for unmatched detections
+    // 3. Create new tracks for unmatched valid 3D detections
     for (size_t j = 0; j < detections.size(); ++j) {
-        if (!matched_detections[j]) {
+        if (!matched_detections[j] && detections[j].is_valid_3d &&
+            std::isfinite(detections[j].x) && std::isfinite(detections[j].y) && std::isfinite(detections[j].z)) {
             auto new_track = std::make_unique<Track3D>(detections[j], timestamp);
             tracks_[new_track->get_id()] = std::move(new_track);
         }

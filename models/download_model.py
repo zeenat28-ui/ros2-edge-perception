@@ -24,6 +24,10 @@ MODEL_URLS = [
 ]
 
 
+# Pinned reference SHA-256 for YOLOv8n ONNX (opset 17, 640x640)
+PINNED_SHA256 = "65158dad735be799c2466fa15e260c09558080bd530b42a8d0c3d1b419afd8b5"
+
+
 def compute_sha256(file_path: str) -> str:
     """Compute SHA-256 checksum of a file."""
     sha256 = hashlib.sha256()
@@ -94,6 +98,11 @@ def verify_model(model_path: str) -> bool:
     print(f"[INFO] Model verified: {model_path}")
     print(f"[INFO] File size: {file_size_mb:.2f} MB")
     print(f"[INFO] SHA-256 Checksum: {checksum}")
+
+    if checksum.lower() != PINNED_SHA256.lower():
+        print(f"[WARN] SHA-256 checksum mismatch: expected {PINNED_SHA256}, got {checksum}")
+    else:
+        print("[INFO] SHA-256 checksum strictly matches pinned release hash.")
 
     # Inspect model inputs/outputs if onnxruntime is available
     try:

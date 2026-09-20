@@ -57,6 +57,10 @@ struct FusedDetection3D {
     bool fused_with_lidar{false};
     bool is_valid_3d{true};
     std::string geometry_status{"LIDAR_FUSED"};
+    float bbox_2d_center_x{0.0f};
+    float bbox_2d_center_y{0.0f};
+    float bbox_2d_width{0.0f};
+    float bbox_2d_height{0.0f};
 };
 
 class LidarCameraFusionEngine {

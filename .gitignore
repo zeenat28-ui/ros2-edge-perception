@@ -31,6 +31,7 @@ log/
 frame_analysis/
 real_highway_drive.mp4
 stress_test_report.json
+validation_report.json
 
 # Models (ignore large checkpoints, but keep download script and classes)
 models/**/*.onnx

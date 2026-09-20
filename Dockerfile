@@ -37,13 +37,14 @@ RUN curl -sSL https://github.com/microsoft/onnxruntime/releases/download/v1.16.3
     tar -xz -C /usr/local --strip-components=1 && \
     ldconfig
 
-# 3. Install Python ML & Testing Dependencies
+# 3. Install Python ML & Testing Dependencies (Pinned for reproducibility)
 RUN pip3 install --no-cache-dir \
-    "numpy>=1.22.0,<2.0.0" \
-    "opencv-python-headless>=4.8.0" \
-    "onnxruntime>=1.16.0" \
-    "psutil>=5.9.0" \
-    "pytest>=7.0.0"
+    "numpy==1.24.4" \
+    "opencv-python-headless==4.8.1.78" \
+    "onnxruntime==1.16.3" \
+    "scipy==1.11.4" \
+    "psutil==5.9.8" \
+    "pytest==7.4.4"
 
 # 4. Setup ROS 2 workspace
 WORKDIR /ros2_ws/src/ros2_edge_perception

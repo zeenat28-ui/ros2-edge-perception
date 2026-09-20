@@ -15,7 +15,7 @@ import os
 import sys
 import threading
 import time
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import cv2
 import numpy as np
@@ -100,6 +100,24 @@ except ImportError:
             self.reliability = reliability
             self.history = history
             self.depth = depth
+
+# Import Structured Safety Interface
+try:
+    from ros2_edge_perception.safety_interface import (
+        SafetyState, SafetyReasonCode, RecommendedAction, SafetyRequest
+    )
+except ImportError:
+    try:
+        from .safety_interface import (
+            SafetyState, SafetyReasonCode, RecommendedAction, SafetyRequest
+        )
+    except ImportError:
+        SafetyState = type("SafetyState", (), {"NOMINAL": "NOMINAL", "DEGRADED": "DEGRADED", "STOP_REQUESTED": "STOP_REQUESTED"})
+        SafetyReasonCode = type("SafetyReasonCode", (), {"NONE": "NONE", "CAMERA_TIMEOUT": "CAMERA_TIMEOUT", "DEPTH_TIMEOUT": "DEPTH_TIMEOUT", "LIDAR_TIMEOUT": "LIDAR_TIMEOUT", "TTC_LIMIT": "TTC_LIMIT"})
+        RecommendedAction = type("RecommendedAction", (), {"CONTINUE": "CONTINUE", "DECELERATE": "DECELERATE", "STOP": "STOP"})
+        class SafetyRequest:
+            def __init__(self, **kwargs): self.__dict__.update(kwargs)
+            def to_json(self): return json.dumps(self.__dict__)
 
 # Import 3D Multi-Object Tracker (Level 5 Tracking & Velocity Engine)
 try:
@@ -200,13 +218,15 @@ def deproject_pixel_to_3d(
 def filter_depth_roi(
     roi_depths: np.ndarray,
     min_depth: float = 0.2,
-    max_depth: float = 10.0
-) -> Optional[float]:
+    max_depth: float = 10.0,
+    return_extent: bool = False
+) -> Union[Optional[float], Tuple[Optional[float], Optional[float]]]:
     """
     Robust percentile-based depth ROI filtering rejecting sensor holes, NaNs, Infs, and background edge bleed.
+    If return_extent is True, returns a tuple (median_depth, depth_extent_meters).
     """
     if roi_depths is None or roi_depths.size == 0:
-        return None
+        return (None, None) if return_extent else None
     valid_mask = (
         (roi_depths >= min_depth) &
         (roi_depths <= max_depth) &
@@ -214,7 +234,7 @@ def filter_depth_roi(
     )
     valid_depths = roi_depths[valid_mask]
     if len(valid_depths) < 10:
-        return None
+        return (None, None) if return_extent else None
     p25, p75 = np.percentile(valid_depths, [25, 75])
     filtered = valid_depths[(valid_depths >= p25) & (valid_depths <= p75)]
     if len(filtered) == 0:
@@ -222,7 +242,10 @@ def filter_depth_roi(
     else:
         res = float(np.median(filtered))
     if not np.isfinite(res):
-        return None
+        return (None, None) if return_extent else None
+    extent_z = float(max(0.2, (p75 - p25) * 1.5))
+    if return_extent:
+        return res, extent_z
     return res
 
 
@@ -611,15 +634,44 @@ class PerceptionNode(Node):
 
         if cam_elapsed > 0.5:
             self.safety_state = "CAMERA_TIMEOUT"
+            req = SafetyRequest(
+                state=SafetyState.STOP_REQUESTED,
+                reason_code=SafetyReasonCode.CAMERA_TIMEOUT,
+                timestamp=now,
+                recommended_action=RecommendedAction.STOP,
+                details=f"Camera frame timeout ({cam_elapsed:.2f}s elapsed > 0.5s limit)"
+            )
         elif depth_elapsed > 0.5:
             self.safety_state = "DEPTH_TIMEOUT"
+            req = SafetyRequest(
+                state=SafetyState.DEGRADED,
+                reason_code=SafetyReasonCode.DEPTH_TIMEOUT,
+                timestamp=now,
+                recommended_action=RecommendedAction.DECELERATE,
+                details=f"Depth stream timeout ({depth_elapsed:.2f}s elapsed > 0.5s limit)"
+            )
         elif self.enable_lidar_fusion and lidar_elapsed > 1.0:
             self.safety_state = "DEGRADED_NO_LIDAR"
+            req = SafetyRequest(
+                state=SafetyState.DEGRADED,
+                reason_code=SafetyReasonCode.LIDAR_TIMEOUT,
+                timestamp=now,
+                recommended_action=RecommendedAction.DECELERATE,
+                details=f"LiDAR stream timeout ({lidar_elapsed:.2f}s elapsed > 1.0s limit)"
+            )
         else:
             self.safety_state = "NOMINAL"
+            req = SafetyRequest(
+                state=SafetyState.NOMINAL,
+                reason_code=SafetyReasonCode.NONE,
+                timestamp=now,
+                recommended_action=RecommendedAction.CONTINUE,
+                details="All perception sensor streams nominal"
+            )
 
+        self.last_safety_request = req
         msg = StringMsg()
-        msg.data = self.safety_state
+        msg.data = req.to_json()
         self.state_pub.publish(msg)
 
     def _image_callback(self, msg: Image):
@@ -797,13 +849,17 @@ class PerceptionNode(Node):
             ttc = track.get("ttc")
             if ttc is not None and ttc < self.ttc_threshold:
                 collision_detected = True
-                alert_str = (
-                    f"CRITICAL: Collision Risk! Obstacle {track['class_name']}_{track['track_id']} "
-                    f"at Z={track['z']:.2f}m approaching with TTC={ttc:.2f}s (vz={track['vz']:.2f}m/s)"
+                req = SafetyRequest(
+                    state=SafetyState.STOP_REQUESTED,
+                    reason_code=SafetyReasonCode.TTC_LIMIT,
+                    timestamp=time.time(),
+                    recommended_action=RecommendedAction.STOP,
+                    ttc_seconds=float(ttc),
+                    details=f"Obstacle {track.get('class_name', 'obstacle')}_{track.get('track_id', 0)} at Z={track.get('z', 0.0):.2f}m approaching with TTC={ttc:.2f}s (vz={track.get('vz', 0.0):.2f}m/s)",
                 )
-                self.get_logger().warn(alert_str)
+                self.get_logger().warn(f"Safety Stop Requested: {req.details}")
                 msg = StringMsg()
-                msg.data = alert_str
+                msg.data = req.to_json()
                 self.safety_pub.publish(msg)
 
             for fx, fy, fz in track.get("future_trajectory", []):
@@ -865,16 +921,20 @@ class PerceptionNode(Node):
                 continue
 
             roi = depth_m[y1:y2, x1:x2]
-            z = filter_depth_roi(roi, min_depth=self.min_depth_m, max_depth=self.max_depth_m)
-            if z is None:
+            z_res = filter_depth_roi(roi, min_depth=self.min_depth_m, max_depth=self.max_depth_m, return_extent=True)
+            if z_res[0] is None:
                 continue
+            z, size_z = z_res
 
             x, y, z = deproject_pixel_to_3d(det["cx"], det["cy"], z, fx, fy, cx, cy)
 
             # Metric 3D bounding box dimensions
-            size_x = (bw * z) / fx
-            size_y = (bh * z) / fy
-            size_z = max(0.2, (p75 - p25) * 1.5)  # Estimated depth extent
+            if fx > 0.0 and fy > 0.0 and np.isfinite(z):
+                size_x = (bw * z) / fx
+                size_y = (bh * z) / fy
+            else:
+                size_x = float("nan")
+                size_y = float("nan")
 
             detections_3d.append(
                 {

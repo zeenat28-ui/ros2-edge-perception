@@ -173,6 +173,68 @@ class TestRuntimeHardening:
         node._update_safety_state()
         assert node.safety_state == "NOMINAL"
 
+    def test_deprojection_with_valid_roi_computes_extent_without_crash(self):
+        """Verify _deproject_detections processes bounding boxes without p75/p25 NameError."""
+        node = PerceptionNode()
+        node.fx = 554.25
+        node.fy = 554.25
+        node.cx = 320.0
+        node.cy = 240.0
+        node.has_intrinsics = True
+
+        # Create a synthetic 480x640 depth image with a 2.5m obstacle
+        depth_m = np.full((480, 640), 2.5, dtype=np.float32)
+        # Add slight variation so p75 - p25 > 0
+        depth_m[200:280, 280:360] = np.linspace(2.2, 2.8, 80 * 80).reshape(80, 80)
+
+        dets_2d = [
+            {
+                "x": 280.0,
+                "y": 200.0,
+                "w": 80.0,
+                "h": 80.0,
+                "cx": 320.0,
+                "cy": 240.0,
+                "score": 0.92,
+                "class_id": 0,
+                "class_name": "person",
+            }
+        ]
+
+        dets_3d = node._compute_3d_detections(dets_2d, depth_m)
+        assert len(dets_3d) == 1
+        d3 = dets_3d[0]
+        assert d3["class_name"] == "person"
+        assert abs(d3["z"] - 2.5) < 0.3
+        assert d3["size_z"] >= 0.2
+        assert np.isfinite(d3["size_x"]) and np.isfinite(d3["size_y"]) and np.isfinite(d3["size_z"])
+
+    def test_structured_safety_request_contracts(self):
+        """Verify SafetyRequest JSON generation and parsing."""
+        from ros2_edge_perception.safety_interface import (
+            SafetyState, SafetyReasonCode, RecommendedAction, SafetyRequest
+        )
+        req = SafetyRequest(
+            state=SafetyState.STOP_REQUESTED,
+            reason_code=SafetyReasonCode.TTC_LIMIT,
+            timestamp=1700000000.1234,
+            recommended_action=RecommendedAction.STOP,
+            ttc_seconds=1.45,
+            details="Person approaching vehicle forward path",
+        )
+        json_str = req.to_json()
+        assert "STOP_REQUESTED" in json_str
+        assert "TTC_LIMIT" in json_str
+        assert "1.45" in json_str
+
+        # Roundtrip deserialization
+        restored = SafetyRequest.from_json(json_str)
+        assert restored.state == SafetyState.STOP_REQUESTED
+        assert restored.reason_code == SafetyReasonCode.TTC_LIMIT
+        assert restored.recommended_action == RecommendedAction.STOP
+        assert restored.ttc_seconds == 1.45
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+

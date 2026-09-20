@@ -74,6 +74,10 @@ std::vector<FusedDetection3D> LidarCameraFusionEngine::fuse(
         fused.class_name = det.class_name;
         fused.class_id = det.class_id;
         fused.score = det.score;
+        fused.bbox_2d_center_x = (det.x1 + det.x2) / 2.0f;
+        fused.bbox_2d_center_y = (det.y1 + det.y2) / 2.0f;
+        fused.bbox_2d_width = det.x2 - det.x1;
+        fused.bbox_2d_height = det.y2 - det.y1;
 
         // Collect all LiDAR points falling inside this 2D bounding box
         std::vector<Eigen::Vector3f> box_points;

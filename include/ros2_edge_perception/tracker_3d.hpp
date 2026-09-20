@@ -22,6 +22,11 @@ struct Detection3DInput {
     std::string class_name;
     float yaw{0.0f};
     float qx{0.0f}, qy{0.0f}, qz{0.0f}, qw{1.0f};
+    float bbox_2d_center_x{0.0f};
+    float bbox_2d_center_y{0.0f};
+    float bbox_2d_width{0.0f};
+    float bbox_2d_height{0.0f};
+    bool is_valid_3d{true};
 };
 
 struct TrackedObject3D {

@@ -116,7 +116,7 @@ void PerceptionNode::init_parameters() {
     enable_lidar_fusion_ = get_parameter("enable_lidar_fusion").as_bool();
 }
 
-void PerceptionNode::init_onnx_session(const std::string& model_path, const std::string& /*device*/) {
+void PerceptionNode::init_onnx_session(const std::string& model_path, const std::string& device) {
     std::string resolved = model_path;
     std::vector<std::string> candidates = {
         model_path,
@@ -136,8 +136,15 @@ void PerceptionNode::init_onnx_session(const std::string& model_path, const std:
     session_options.SetIntraOpNumThreads(4);
     session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
 
+    // CPU provider is configured by default. Hardware-specific execution providers
+    // (e.g. CUDA, TensorRT, ROCm) require target platform validation and corresponding
+    // ONNX Runtime provider libraries installed during build.
+    if (device != "cpu") {
+        RCLCPP_INFO(get_logger(), "Requested device '%s'. Configuring ONNX Runtime session...", device.c_str());
+    }
+
     ort_session_ = std::make_unique<Ort::Session>(ort_env_, resolved.c_str(), session_options);
-    RCLCPP_INFO(get_logger(), "Loaded ONNX model from: %s", resolved.c_str());
+    RCLCPP_INFO(get_logger(), "Loaded ONNX model from: %s (Provider: CPU)", resolved.c_str());
 
     input_names_.push_back("images");
     output_names_.push_back("output0");
@@ -432,6 +439,11 @@ std::vector<Detection3DInput> PerceptionNode::postprocess_yolov8(
             det.qy = f.qy;
             det.qz = f.qz;
             det.qw = f.qw;
+            det.bbox_2d_center_x = f.bbox_2d_center_x;
+            det.bbox_2d_center_y = f.bbox_2d_center_y;
+            det.bbox_2d_width = f.bbox_2d_width;
+            det.bbox_2d_height = f.bbox_2d_height;
+            det.is_valid_3d = f.is_valid_3d;
             results.push_back(det);
         }
         return results;
@@ -445,19 +457,37 @@ std::vector<Detection3DInput> PerceptionNode::postprocess_yolov8(
     }
 
     for (const auto& b : bboxes_2d) {
-        float z = 4.0f;
+        float center_u = (b.x1 + b.x2) / 2.0f;
+        float center_v = (b.y1 + b.y2) / 2.0f;
+        float bw = b.x2 - b.x1;
+        float bh = b.y2 - b.y1;
+
+        Detection3DInput det;
+        det.score = b.score;
+        det.class_id = b.class_id;
+        det.class_name = b.class_name;
+        det.bbox_2d_center_x = center_u;
+        det.bbox_2d_center_y = center_v;
+        det.bbox_2d_width = bw;
+        det.bbox_2d_height = bh;
+        det.yaw = 0.0f;
+        det.qx = 0.0f; det.qy = 0.0f; det.qz = 0.0f; det.qw = 1.0f;
+
+        float z = std::numeric_limits<float>::quiet_NaN();
+        bool valid_depth = false;
         int bx = static_cast<int>(b.x1);
         int by = static_cast<int>(b.y1);
-        int bw = static_cast<int>(b.x2 - b.x1);
-        int bh = static_cast<int>(b.y2 - b.y1);
+        int ibw = static_cast<int>(bw);
+        int ibh = static_cast<int>(bh);
 
-        if (!depth_m.empty() && bx + bw <= depth_m.cols && by + bh <= depth_m.rows) {
-            cv::Mat roi = depth_m(cv::Rect(bx, by, bw, bh));
+        if (!depth_m.empty() && bx >= 0 && by >= 0 && bx + ibw <= depth_m.cols && by + ibh <= depth_m.rows && ibw > 0 && ibh > 0) {
+            cv::Mat roi = depth_m(cv::Rect(bx, by, ibw, ibh));
             std::vector<float> valid_depths;
+            valid_depths.reserve(roi.total());
             for (int r = 0; r < roi.rows; ++r) {
                 const float* r_ptr = roi.ptr<float>(r);
                 for (int c = 0; c < roi.cols; ++c) {
-                    if (r_ptr[c] >= min_depth_m_ && r_ptr[c] <= max_depth_m_) {
+                    if (std::isfinite(r_ptr[c]) && r_ptr[c] >= min_depth_m_ && r_ptr[c] <= max_depth_m_) {
                         valid_depths.push_back(r_ptr[c]);
                     }
                 }
@@ -466,27 +496,27 @@ std::vector<Detection3DInput> PerceptionNode::postprocess_yolov8(
                 std::sort(valid_depths.begin(), valid_depths.end());
                 size_t p50_idx = valid_depths.size() / 2;
                 z = valid_depths[p50_idx];
+                valid_depth = true;
             }
         }
 
-        float center_u = (b.x1 + b.x2) / 2.0f;
-        float center_v = (b.y1 + b.y2) / 2.0f;
-
-        Detection3DInput det;
-        det.x = (center_u - cx) * z / fx;
-        det.y = (center_v - cy) * z / fy;
-        det.z = z;
-        det.size_x = (bw * z) / fx;
-        det.size_y = (bh * z) / fy;
-        det.size_z = 0.4f;
-        det.score = b.score;
-        det.class_id = b.class_id;
-        det.class_name = b.class_name;
-        det.yaw = 0.0f;
-        det.qx = 0.0f;
-        det.qy = 0.0f;
-        det.qz = 0.0f;
-        det.qw = 1.0f;
+        if (valid_depth && fx > 0.0f && fy > 0.0f) {
+            det.is_valid_3d = true;
+            det.x = (center_u - cx) * z / fx;
+            det.y = (center_v - cy) * z / fy;
+            det.z = z;
+            det.size_x = (bw * z) / fx;
+            det.size_y = (bh * z) / fy;
+            det.size_z = 0.4f;
+        } else {
+            det.is_valid_3d = false;
+            det.x = std::numeric_limits<float>::quiet_NaN();
+            det.y = std::numeric_limits<float>::quiet_NaN();
+            det.z = std::numeric_limits<float>::quiet_NaN();
+            det.size_x = 0.0f;
+            det.size_y = 0.0f;
+            det.size_z = 0.0f;
+        }
         results.push_back(det);
     }
 
@@ -500,10 +530,10 @@ void PerceptionNode::publish_detections_2d(const std::vector<Detection3DInput>& 
     for (const auto& d : detections) {
         vision_msgs::msg::Detection2D d2;
         d2.header = header;
-        d2.bbox.center.position.x = d.x;
-        d2.bbox.center.position.y = d.y;
-        d2.bbox.size_x = d.size_x;
-        d2.bbox.size_y = d.size_y;
+        d2.bbox.center.position.x = d.bbox_2d_center_x;
+        d2.bbox.center.position.y = d.bbox_2d_center_y;
+        d2.bbox.size_x = d.bbox_2d_width;
+        d2.bbox.size_y = d.bbox_2d_height;
 
         vision_msgs::msg::ObjectHypothesisWithPose hyp;
         hyp.hypothesis.class_id = d.class_name;
@@ -553,12 +583,18 @@ void PerceptionNode::evaluate_safety_and_trajectories(const std::vector<TrackedO
 
     for (const auto& t : tracks) {
         if (t.ttc.has_value() && t.ttc.value() < ttc_threshold_) {
-            std::string alert = "CRITICAL: Collision Risk! Obstacle " + t.class_name + "_" +
-                                std::to_string(t.track_id) + " at Z=" + std::to_string(t.z) +
-                                "m approaching with TTC=" + std::to_string(t.ttc.value()) + "s!";
-            RCLCPP_WARN(get_logger(), "%s", alert.c_str());
+            std::string alert_json = "{\"state\":\"STOP_REQUESTED\",\"reason_code\":\"TTC_LIMIT\","
+                                     "\"timestamp\":" + std::to_string(this->now().seconds()) + ","
+                                     "\"source\":\"ros2_edge_perception\","
+                                     "\"recommended_action\":\"STOP\","
+                                     "\"ttc_seconds\":" + std::to_string(t.ttc.value()) + ","
+                                     "\"details\":\"Obstacle " + t.class_name + "_" + std::to_string(t.track_id) +
+                                     " at Z=" + std::to_string(t.z) + "m approaching with TTC=" +
+                                     std::to_string(t.ttc.value()) + "s\"}";
+            RCLCPP_WARN(get_logger(), "Safety Stop Requested: Obstacle %s_%d approaching (TTC=%.2fs)",
+                        t.class_name.c_str(), t.track_id, t.ttc.value());
             std_msgs::msg::String s;
-            s.data = alert;
+            s.data = alert_json;
             safety_pub_->publish(s);
         }
 

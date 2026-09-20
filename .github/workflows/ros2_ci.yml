@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (ROS 2 Humble)
+    name: Build & Test (ROS 2 Humble C++20 & Python)
     runs-on: ubuntu-22.04
 
     container:
@@ -18,41 +18,61 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Install System Dependencies
+      - name: Install C++ & ROS 2 System Dependencies
         run: |
           apt-get update && apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            tar \
             python3-pip \
             python3-colcon-common-extensions \
+            ros-humble-rclcpp \
+            ros-humble-rclcpp-components \
+            ros-humble-sensor-msgs \
+            ros-humble-geometry-msgs \
             ros-humble-vision-msgs \
-            ros-humble-cv-bridge \
             ros-humble-diagnostic-msgs \
+            ros-humble-cv-bridge \
+            ros-humble-ament-cmake-python \
+            ros-humble-eigen3-cmake-module \
+            libeigen3-dev \
+            libopencv-dev \
             libgl1-mesa-glx \
             libglib2.0-0
           rm -rf /var/lib/apt/lists/*
 
-      - name: Install Python Dependencies
+      - name: Install Native ONNX Runtime C++ Library (v1.16.3)
+        run: |
+          curl -sSL https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz | \
+            tar -xz -C /usr/local --strip-components=1
+          ldconfig
+
+      - name: Install Pinned Python Dependencies
         run: |
           pip3 install --no-cache-dir \
-            "numpy>=1.22.0,<2.0.0" \
-            "opencv-python-headless>=4.8.0" \
-            "onnxruntime>=1.16.0" \
-            "pytest>=7.0.0"
+            "numpy==1.24.4" \
+            "opencv-python-headless==4.8.1.78" \
+            "onnxruntime==1.16.3" \
+            "scipy==1.11.4" \
+            "psutil==5.9.8" \
+            "pytest==7.4.4"
 
       - name: Download & Verify YOLOv8n ONNX Model
         run: |
           python3 models/download_model.py
 
-      - name: Run Enterprise Unit & Integration Test Suite
+      - name: Run Python Qualification & Unit Test Suite
         run: |
           python3 -m pytest tests/ -v
 
-      - name: Build ROS 2 Package with Colcon
+      - name: Build Both C++20 & Python Backends with Colcon
         run: |
           mkdir -p /ros2_ws/src
           cp -r . /ros2_ws/src/ros2_edge_perception
           cd /ros2_ws
           . /opt/ros/humble/setup.sh
-          colcon build --symlink-install --packages-select ros2_edge_perception
+          colcon build --symlink-install --packages-select ros2_edge_perception \
+            --cmake-args -DCMAKE_BUILD_TYPE=Release
           colcon test --packages-select ros2_edge_perception
           colcon test-result --verbose
-
