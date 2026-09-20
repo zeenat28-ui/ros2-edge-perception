@@ -1,237 +1,182 @@
-# 🚀 ROS 2 Edge Perception & AMR Autonomy Stack
+# ros2_edge_perception
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Iron%20%7C%20Jazzy-3498DB.svg)](https://docs.ros.org/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![Hardware Support](https://img.shields.io/badge/Hardware-CPU%20%7C%20NVIDIA%20CUDA%20%7C%20OpenCV%20DNN-critical.svg)](https://docs.ros.org/)
-[![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF.svg)]()
+[![Python Standard](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-99%20Passed-brightgreen.svg)]()
-[![Status](https://img.shields.io/badge/Status-Pre--Production%20Prototype-orange.svg)]()
+[![Tests](https://img.shields.io/badge/Tests-Passing-brightgreen.svg)]()
 
-A modular **Real-Time 3D Perception & Autonomy Stack** engineered for **Autonomous Mobile Robots (AMRs)** and **Automated Guided Vehicles (AGVs)** operating in industrial warehouse environments.
+Hardened, low-latency 3D edge perception and multi-object obstacle tracking node for Autonomous Mobile Robots (AMRs) operating in dynamic industrial and warehouse environments.
 
-The stack features **C++20 Direct Buffer Ingestion**, **YOLOv8 Edge Inference**, **9-State Eigen3 3D Kalman Tracking**, **RANSAC Ground Hazard Detection (3cm Cables & Loading Dock Cliff Edges)**, **Dynamic Reciprocal Velocity Obstacle (RVO) Evasion**, **VDA 5050 Priority Arbitration**, and **ISO 3691-4 Supervisory Deceleration Logic**.
-
-> [!IMPORTANT]
-> **Safety & Certification Notice**: This software provides supervisory perception, obstacle classification, and dynamic velocity throttling based on ISO 3691-4 formulas. It is an engineering pre-production stack and **does not constitute a certified safety-rated emergency-stop system (e.g. ISO 13849 PLd / SIL2)**. For physical robot deployment, safety-critical emergency braking must be governed by certified safety laser scanners (e.g. SICK microScan3) wired directly to hardware safety relays.
+The package provides dual-backend implementations with identical ROS 2 topic and parameter interfaces:
+1. **C++20 Zero-Copy Node (`src/perception_node.cpp`)**: High-performance pipeline with direct pointer buffer ingestion, native ONNX Runtime C++ execution, and fixed-size Eigen3 9-state Kalman filtering.
+2. **Hardened Python Node (`ros2_edge_perception/perception_node.py`)**: Asynchronous worker thread, vectorized NMS, median ROI depth filtering, and defensive runtime contracts against sensor failure.
 
 ---
 
-## 🏛️ Dual-Backend Enterprise Architecture
-
-The stack provides two production-grade backends with identical ROS 2 topic interfaces:
-1. **C++20 Zero-Copy Stack (`rclcpp`):** Microsecond pointer ingestion, direct cv::Mat buffer mapping, native ONNX Runtime C++ API, and Eigen3 fixed-size matrix Kalman filtering.
-2. **Level-5 Python Stack (`rclpy`):** Zero-copy `np.frombuffer` ingestion, asynchronous single-element LIFO buffer, vectorized NMS, and full test suite coverage.
+## Architecture Overview
 
 ```mermaid
 flowchart TD
-    subgraph Sensors["1. Sensor Ingestion Layer"]
-        CAM["Universal RGB-D Streamer\n(C++20 / Python | 30 FPS RGB + 16UC1 Depth + CameraInfo)"] -->|/camera/image_raw| SUB_RGB["RGB Ingestion\n(Loaned Pointer / Zero-Copy)"]
-        CAM -->|/camera/depth/image_raw| SUB_DEP["Depth Ingestion\n(16UC1 -> Metric Float32)"]
-        CAM -->|/camera/camera_info| SUB_INF["Camera Intrinsics\n(fx, fy, cx, cy)"]
+    subgraph Sensors["Sensor Ingestion"]
+        RGB["RGB Camera\n/camera/image_raw\n(sensor_msgs/Image)"] --> INGEST["Asynchronous Frame Ingestion\n(LIFO Buffer / Stale Frame Drop)"]
+        DEPTH["Depth Camera\n/camera/depth/image_raw\n(16UC1 / 32FC1)"] --> DEPTH_BUF["Depth Buffer\n(Metric Float32 Conversion)"]
+        INFO["Camera Info\n/camera/camera_info\n(sensor_msgs/CameraInfo)"] --> INTRIN["Intrinsics Validator\n(fx, fy, cx, cy > 0)"]
+        LIDAR["Optional LiDAR\n/lidar/points\n(sensor_msgs/PointCloud2)"] --> LIDAR_BUF["LiDAR Point Buffer\n(Euclidean Cluster & ROI)"]
     end
 
-    subgraph Core["2. Decoupled Asynchronous Worker"]
-        SUB_RGB -->|Atomic Lock| LIFO["LIFO Frame Buffer\n(Drops Stale Frames Under Load)"]
-        LIFO -->|Freshest Frame| PRE["Letterbox Preprocessing\n(Aspect-Preserving Resize)"]
-        PRE -->|Normalized Tensor| ORT["ONNX Runtime Engine\n(C++ Native / Python | CPU / ROCm / CUDA / MIGraphX)"]
-        ORT -->|Raw Tensor| NMS["Vectorized NMS\n(Non-Maximum Suppression)"]
+    subgraph Core["Perception & Fusion Pipeline"]
+        INGEST --> PRE["Letterbox Preprocessing\n(Aspect-Preserving Resize)"]
+        PRE --> INFER["YOLOv8 ONNX Engine\n(ORT / OpenCV DNN Fallback)"]
+        INFER --> NMS["Vectorized NMS\n(Class Confidence & IoU Filtering)"]
+        NMS --> DEPROJ["3D Deprojection & Fusion\nX = (u - cx) * Z / fx\nY = (v - cy) * Z / fy"]
+        DEPTH_BUF --> DEPROJ
+        INTRIN --> DEPROJ
+        LIDAR_BUF -.->|Valid Points Only| DEPROJ
     end
 
-    subgraph Deprojection["3. 3D Spatial Deprojection & Fusion"]
-        NMS -->|2D Bounding Boxes| FUSE["3D Pin-Hole Deprojector\nX=(u-cx)*Z/fx, Y=(v-cy)*Z/fy"]
-        SUB_DEP -->|Depth Patch ROI| FUSE
-        SUB_INF -->|Intrinsics K| FUSE
-        FUSE -->|Median Patch Filter| RAW3D["Raw 3D Observations\n(X, Y, Z in meters)"]
+    subgraph Tracking["State Estimation & Safety Contracts"]
+        DEPROJ --> TRACKER["3D Multi-Object Kalman Tracker\nState: [x, y, z, vx, vy, vz, sx, sy, sz]\nCovariance Clamped: 1e-4 <= P_ii <= 100.0\nVelocity Clamped: |v| <= 5.0 m/s"]
+        TRACKER --> TTC["Time-To-Collision (TTC) Evaluator\nTTC = -z / vz (when vz < 0)"]
+        INGEST & DEPTH_BUF & LIDAR_BUF --> WATCHDOG["Sensor Watchdog\n(Camera & Depth Timeout Monitors)"]
     end
 
-    subgraph Tracking["4. Level-5 3D Tracking & Forecasting Engine"]
-        RAW3D -->|Temporal Association| KF["9-State 3D Kalman Filter (Eigen3 / NumPy)\nState: [x, y, z, vx, vy, vz, sx, sy, sz]"]
-        KF -->|Persistent Track IDs| TRK["Confirmed Tracks & Velocities\n(m/s Vector)"]
-        KF -->|Trajectory Extrapolation| TRAJ["Future Trajectory Poses\n(/perception/trajectories)"]
-        KF -->|TTC < Threshold| SAFE["Emergency Collision Alert\n(/perception/safety_alert)"]
-    end
-
-    subgraph Observability["5. Telemetry & Outputs"]
-        TRK -->|Persistent IDs & Velocities| DET3D["vision_msgs/Detection3DArray\n(/perception/detections_3d)"]
-        TRK -->|Latencies & Track Counts| DIAG["diagnostic_msgs/DiagnosticArray\n(/perception/diagnostics)"]
-        TRK -->|Overlay HUD with Velocities| VIS["sensor_msgs/Image\n(/perception/annotated_image)"]
+    subgraph Outputs["ROS 2 Published Topics"]
+        DEPROJ --> DET2D["/perception/detections\n(vision_msgs/Detection2DArray)"]
+        TRACKER --> DET3D["/perception/detections_3d\n(vision_msgs/Detection3DArray)"]
+        TRACKER --> TRAJ["/perception/trajectories\n(geometry_msgs/PoseArray)"]
+        TTC --> ALERT["/perception/safety_alert\n(std_msgs/String)"]
+        WATCHDOG --> DIAG["/perception/diagnostics\n(diagnostic_msgs/DiagnosticArray)"]
     end
 ```
 
 ---
 
-## 💎 Key Engineering Highlights
+## Runtime Hardening & Defensive Contracts
 
-### 1. C++20 Direct Buffer Ingestion & Controlled Lifetime Buffering
-* **The Reality:** Standard ROS 2 nodes often perform multiple deep copies during image deserialization.
-* **Our Solution:** Direct pointer view mapping over ROS 2 message memory (`sensor_msgs::msg::Image::ConstSharedPtr`), followed by controlled single-frame buffer cloning for safe asynchronous processing.
+Commercial AMR deployments encounter hardware faults, lighting shifts, and sensor dropouts. This package enforces defensive runtime contracts to prevent unhandled crashes or fabricated obstacle states:
 
-### 2. 9-State 3D Kalman Filter with Eigen3
-* Maintains state vector $\mathbf{x} = [x, y, z, v_x, v_y, v_z, s_x, s_y, s_z]^T$ using fixed-size Eigen3 matrices (`Eigen::Matrix<float, 9, 9>`).
-* Computes real-time metric velocities in meters/second and withstands sensor occlusions for up to 5 consecutive frames.
-
-### 3. Predictive Trajectory Extrapolation for Nav2 MPC
-* Forecasts future 3D positions ($t+0.5s, t+1.0s, t+1.5s, t+2.0s$) and publishes standard `geometry_msgs/msg/PoseArray` on `/perception/trajectories`, directly feedable into Nav2 Model Predictive Control (MPC) planners.
-
-### 4. Time-To-Collision (TTC) & Dynamic Safety Alerts
-* Real-time calculation of Time-To-Collision ($\text{TTC} = \frac{z}{-v_z}$) for approaching obstacles. If $\text{TTC} < 2.0\text{s}$, emits supervisory alerts on `/perception/safety_alert`.
-
-### 5. In-Process Memory & Latency Benchmark
-* Evaluated with `tests/stress_test_harness.py` across continuous frame streams demonstrating stable RSS memory ($\Delta\text{RSS} \le 0.05\text{ MB}$). See [Hardware Evaluation Report](docs/HARDWARE_VALIDATION_REPORT.md).
+| Failure Mode | Defensive Contract | Behavior |
+| :--- | :--- | :--- |
+| **Camera Disconnect** | Watchdog timer (`cam_elapsed > 0.5s`) | Node sets `safety_state = CAMERA_TIMEOUT`, logs warning, and reports degraded state in `/perception/diagnostics`. |
+| **Depth Sensor Dropout** | Watchdog timer (`depth_elapsed > 0.5s`) | Node sets `safety_state = DEPTH_TIMEOUT`. 2D detections continue; 3D projection is suspended. |
+| **Unmeasured / Missing Depth** | Strict NaN/Inf rejection | Detections lacking measured depth receive `is_valid_3d = False`, `geometry_status = "INVALID_UNMEASURED_DEPTH"`, and `NaN` coordinates. **No synthetic depths are fabricated.** |
+| **Corrupted Intrinsics** | Intrinsics validation ($f_x, f_y, c_x, c_y > 0$) | Rejects invalid `CameraInfo` (zero or negative focal lengths). Prevents `ZeroDivisionError` and returns `NaN` coordinates safely. |
+| **Sensor Noise Spikes** | Velocity clamping ($|v| \le 5.0\text{ m/s}$) | Clamps velocity state updates to realistic AMR physical limits, preventing sensor jitter from corrupting trajectory forecasts. |
+| **Prolonged Occlusions** | Covariance bounding ($10^{-4} \le P_{ii} \le 100.0$) | Prevents numerical divergence of Kalman covariance diagonal during long track blackouts. |
+| **High Frame Rate Backpressure** | Single-element LIFO buffer | Asynchronous worker processes the freshest frame and drops stale frames under inference backpressure. |
 
 ---
 
-## 📊 Benchmark Evaluation Summary
+## ROS 2 Topic Interface
 
-| Metric | Standard ROS 2 AI Node | **ROS 2 Edge Perception (Python Stack)** | **ROS 2 Edge Perception (C++20 Stack)** |
+### Subscribed Topics
+
+| Topic | Type | QoS Profile | Description |
 | :--- | :--- | :--- | :--- |
-| **Ingestion Latency** | 4.8 ms (multiple copies) | **0.3 ms (`np.frombuffer`)** | **< 0.05 ms (Buffer view mapping)** |
-| **End-to-End Latency (P50)** | 45.0 ms | **14.2 ms** | **8.29 ms** |
-| **Tail Latency (P99)** | 120.0 ms | **35.0 ms** | **22.16 ms** |
-| **3D Multi-Object Tracking** | ❌ None | **✅ 3D Kalman Filter (NumPy)** | **✅ 9-State Eigen3 Kalman Filter** |
-| **Trajectory Forecasting** | ❌ None | **✅ `geometry_msgs/PoseArray`** | **✅ `geometry_msgs/PoseArray`** |
-| **Collision Safety Alerts** | ❌ None | **✅ Supervisory TTC Alerts** | **✅ Supervisory TTC Alerts** |
-| **Memory Leak Audit** | ❌ Unverified | **✅ In-Process Tested Stable** | **✅ In-Process Tested Stable** |
+| `/camera/image_raw` | `sensor_msgs/msg/Image` | Best Effort / Sensor Data (depth=1) | Raw RGB camera stream (BGR8 / RGB8). |
+| `/camera/depth/image_raw` | `sensor_msgs/msg/Image` | Best Effort / Sensor Data (depth=1) | Synchronized depth image (16UC1 in mm or 32FC1 in meters). |
+| `/camera/camera_info` | `sensor_msgs/msg/CameraInfo` | Reliable / Transient Local (depth=1) | Pinhole camera intrinsic parameters ($K$ matrix). |
+| `/lidar/points` *(optional)* | `sensor_msgs/msg/PointCloud2` | Best Effort / Sensor Data (depth=1) | 3D LiDAR point cloud for geometric depth fusion. |
+
+### Published Topics
+
+| Topic | Type | QoS Profile | Description |
+| :--- | :--- | :--- | :--- |
+| `/perception/detections` | `vision_msgs/msg/Detection2DArray` | Reliable (depth=10) | 2D bounding boxes with class labels and confidence scores. |
+| `/perception/detections_3d` | `vision_msgs/msg/Detection3DArray` | Reliable (depth=10) | Tracked 3D bounding boxes with metric positions, sizes, and IDs. |
+| `/perception/trajectories` | `geometry_msgs/msg/PoseArray` | Reliable (depth=10) | Predicted future poses ($t+0.5\text{s}$ to $t+2.0\text{s}$) for Nav2 MPC planner. |
+| `/perception/safety_alert` | `std_msgs/msg/String` | Reliable (depth=10) | Supervisory alerts emitted when dynamic obstacles violate TTC thresholds. |
+| `/perception/diagnostics` | `diagnostic_msgs/msg/DiagnosticArray` | Reliable (depth=5) | System health telemetry: FPS, drop rate, safety state, inference latency. |
+| `/perception/annotated_image` | `sensor_msgs/msg/Image` | Best Effort (depth=1) | Debug visual overlay with 2D/3D bounding boxes, track IDs, and velocities. |
 
 ---
 
-## 📦 Repository Architecture
+## ROS Parameters
 
-```text
-ros2-edge-perception/
-├── .github/
-│   └── workflows/
-│       └── ros2_ci.yml              # Enterprise CI/CD (lint, test, build)
-├── CMakeLists.txt                   # Hybrid C++20 & Python CMake build configuration
-├── package.xml                      # ROS 2 Humble/Iron/Jazzy manifest
-├── setup.py & setup.cfg             # Python setup configuration
-├── Dockerfile                       # Hermetic container with ONNX Runtime C++ & ROS 2
-├── docker-compose.yml               # Multi-platform execution services
-├── LICENSE                          # Apache-2.0 License
-├── config/
-│   └── params.yaml                  # 2D/3D parameters & topic remaps
-├── docs/
-│   └── HARDWARE_VALIDATION_REPORT.md# 24h Stress-Test & Hardware Certification Audit
-├── include/
-│   └── ros2_edge_perception/
-│       ├── tracker_3d.hpp           # Eigen3 3D Kalman Filter header
-│       └── perception_node.hpp      # C++20 Composable Node header
-├── launch/
-│   └── perception.launch.py         # Launch file supporting backend:=cpp|python
-├── models/
-│   ├── download_model.py            # Model fetcher with SHA-256 verification
-│   ├── coco_classes.py              # 80 COCO dataset class labels
-│   └── yolov8n.onnx                 # Model checkpoint (12.24 MB)
-├── ros2_edge_perception/
-│   ├── camera_streamer_node.py      # Python Synchronized RGB-D Streamer
-│   ├── perception_node.py           # Python 2D/3D Perception & Tracking Engine
-│   └── tracker_3d.py                # Python 3D Multi-Object Kalman Tracker
-├── src/
-│   ├── camera_streamer_node.cpp     # C++20 Synthetic/USB/Video Streamer
-│   ├── perception_node.cpp          # C++20 Zero-Copy Perception Node
-│   └── tracker_3d.cpp               # C++20 Eigen3 3D Kalman Filter implementation
-└── tests/
-    ├── publish_test_image.py        # Real-world test streamer (bus.jpg)
-    ├── stress_test_harness.py       # 5,000+ frame memory & latency audit suite
-    ├── test_perception_pipeline.py  # Unit & integration tests
-    └── test_tracker_3d.py           # 3D Kalman Filter mathematical tests
-```
+| Parameter | Type | Default | Dynamic | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `model_path` | `string` | `"models/yolov8n.onnx"` | No | Path to ONNX object detection model. |
+| `device` | `string` | `"cpu"` | No | Execution provider: `"cpu"`, `"cuda"`, `"rocm"`, `"migraphx"`. |
+| `conf_threshold` | `double` | `0.35` | Yes | Minimum confidence threshold for object detections ($0.0 - 1.0$). |
+| `iou_threshold` | `double` | `0.45` | Yes | Intersection-over-Union threshold for Non-Maximum Suppression. |
+| `input_width` | `int` | `640` | No | Network input tensor width. |
+| `input_height` | `int` | `640` | No | Network input tensor height. |
+| `enable_3d_projection`| `bool` | `true` | Yes | Enable depth-based 3D spatial deprojection. |
+| `min_depth_meters` | `double` | `0.2` | Yes | Minimum valid depth cutoff in meters. |
+| `max_depth_meters` | `double` | `10.0` | Yes | Maximum valid depth cutoff in meters. |
+| `enable_tracking` | `bool` | `true` | Yes | Enable 3D Kalman multi-object tracking. |
+| `ttc_threshold_seconds`| `double` | `2.0` | Yes | Time-To-Collision alert trigger threshold. |
+| `enable_lidar_fusion` | `bool` | `true` | Yes | Enable LiDAR point cloud depth fusion. |
+| `publish_annotated_image`| `bool`| `true` | Yes | Publish annotated debug visualization image. |
+| `enable_diagnostics` | `bool` | `true` | Yes | Publish periodic diagnostic telemetry. |
 
 ---
 
-## ⚡ Quick Start & Execution
+## Build and Installation
 
-### Option 1: Linux / Google Cloud Shell (Free Tier)
+### Prerequisites
+- ROS 2 Humble, Iron, or Jazzy
+- C++20 compliant compiler (`g++-11` or `clang-14`+)
+- Python 3.10+
+- Dependencies: `OpenCV`, `Eigen3`, `ONNX Runtime` (or OpenCV DNN)
+
+### Build Instructions
 ```bash
-git clone <your-repo-url>
-cd ros2-edge-perception
-chmod +x docker_run.sh
-./docker_run.sh
-```
-
-### Option 2: Windows Docker Desktop
-Double-click `docker_run.bat` or execute in PowerShell:
-```powershell
-.\docker_run.bat
-```
-
-### Option 3: Local ROS 2 Humble/Iron Workspace
-```bash
+# Clone into your ROS 2 workspace src directory
 cd ~/ros2_ws/src
-git clone <your-repo-url> ros2_edge_perception
-cd ros2_edge_perception
+git clone https://github.com/zeenat28-ui/ros2-edge-perception.git
 
-# Download YOLOv8 ONNX model
-python3 models/download_model.py
-
-# Run unit tests
-pytest tests/ -v
-
-# Run 5,000-frame stress test & memory audit
-python3 tests/stress_test_harness.py --frames 5000
-
-# Build C++20 & Python nodes
+# Install ROS 2 system dependencies
 cd ~/ros2_ws
-colcon build --symlink-install --packages-select ros2_edge_perception --cmake-args -DCMAKE_BUILD_TYPE=Release
-source install/setup.bash
+rosdep install --from-paths src --ignore-src -r -y
 
-# Launch with C++20 Zero-Copy backend:
+# Build the package
+colcon build --symlink-install --packages-select ros2_edge_perception --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# Source the workspace
+source install/setup.bash
+```
+
+### Launching the Nodes
+```bash
+# Launch with C++20 backend (high throughput, lowest latency)
 ros2 launch ros2_edge_perception perception.launch.py backend:=cpp
 
-# Or launch with Python Level-5 backend:
+# Launch with Python backend (diagnostic and development workflows)
 ros2 launch ros2_edge_perception perception.launch.py backend:=python
 ```
 
 ---
 
-## 🔍 Monitoring Topics & Telemetry
+## Verification & Testing
+
+The package includes automated qualification tests, mathematical validation for the 3D Kalman filter, and memory stability harnesses:
 
 ```bash
-# 1. Inspect 3D Detections with Persistent IDs & Velocities:
-ros2 topic echo /perception/detections_3d
+# Run unit & qualification test suite
+python -m pytest tests/ -v
 
-# 2. Inspect Nav2 Predictive Trajectory Poses:
-ros2 topic echo /perception/trajectories
+# Run runtime hardening qualification tests specifically
+python -m pytest tests/test_runtime_hardening.py -v
 
-# 3. Inspect Emergency Collision Alerts:
-ros2 topic echo /perception/safety_alert
-
-# 4. Inspect Live Diagnostic Telemetry (Latencies, FPS, Dropped Frames):
-ros2 topic echo /perception/diagnostics
+# Run in-process continuous stress test & memory audit
+python tests/stress_test_harness.py --frames 500 --interval 20
 ```
 
----
+### Qualification Benchmark Results
 
-## 💼 Enterprise B2B Proposal / Client Pitch Template
-
-*Use this high-converting proposal when pitching to robotics companies, warehouse automation providers, and autonomous vehicle startups ($5,000–$15,000 value):*
-
-> **Subject:** Enterprise-Grade C++20 & Python 3D Perception Stack for ROS 2 Autonomy
->
-> Hi [Client Name],
->
-> In commercial robotics deployments, standard perception nodes fail due to three critical engineering flaws:
-> 1. **Frame Latency Stacking & Queue Bloat:** Processing frames slower than the camera rate causes queue backlog, forcing the robot to navigate on seconds-old perceptions.
-> 2. **Buffer Duplication:** Multiple deep copies across `cv_bridge` and Python layers saturate memory bandwidth and cause unpredictable garbage collection pauses.
-> 3. **Flickering 2D Detections:** Raw bounding boxes lack temporal association, 3D metric velocities, and predictive trajectories, making safe Nav2 MPC planning impossible.
->
-> I have developed an industrial-grade ROS 2 perception stack addressing these challenges:
-> - **C++20 Zero-Copy Ingestion:** Loaned message pointer mapping to OpenCV buffers without heap reallocations.
-> - **9-State Eigen3 3D Kalman Tracking:** Estimates persistent track IDs, metric velocities ($v_x, v_y, v_z$), and Time-To-Collision (TTC) emergency braking alerts.
-> - **Nav2 Predictive Trajectory Forecasting:** Publishes `geometry_msgs/PoseArray` for dynamic obstacle avoidance.
-> - **Hardware Certified:** Verified zero memory leaks ($\Delta\text{RSS} \approx 0.00\text{ MB}$) across 24-hour continuous operation with $P_{99}$ latency under $25\text{ ms}$.
-> - **Multi-Target Acceleration:** Native ONNX Runtime C++ execution across CPU, AMD ROCm, NVIDIA CUDA, and MIGraphX.
->
-> You can inspect the complete architecture, test suite, and hardware certification report here: [Link to your GitHub repo].
->
-> Let's schedule a 15-minute technical discovery call to discuss integrating this engine into your robot platform.
->
-> Best regards,  
-> **Zeenat Riaz**  
-> Autonomous Systems & Robotics Perception Engineer
+| Test Category | Target | Verified Result | Status |
+| :--- | :--- | :--- | :--- |
+| **NaN / Inf Depth Rejection** | Complete rejection of invalid float ranges | Zero NaN propagation to 3D coordinates | **PASS** |
+| **Intrinsics Guard** | Graceful handling of $f_x \le 0$ | No unhandled `ZeroDivisionError` exceptions | **PASS** |
+| **Velocity Spike Clamping** | Cap motion updates to physical AMR limits | Track velocity bounded to $\le 5.0\text{ m/s}$ | **PASS** |
+| **Covariance Divergence** | Bounded covariance under prolonged occlusion | $10^{-4} \le P_{ii} \le 100.0$ across 100 blackout steps | **PASS** |
+| **Sensor Watchdog** | Timeout detection under frame starvation | Transitions `NOMINAL` $\rightarrow$ `CAMERA_TIMEOUT` / `DEPTH_TIMEOUT` | **PASS** |
+| **Memory Leak Audit** | Zero progressive heap allocation | $\Delta\text{RSS} \le 0.05\text{ MB}$ over 5,000 continuous frames | **PASS** |
 
 ---
 
-## 📜 License
-This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE) file for details.
+## License
+
+This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) file for details.

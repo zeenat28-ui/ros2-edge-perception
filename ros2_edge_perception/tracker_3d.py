@@ -27,8 +27,8 @@ class Track3D:
         Track3D._next_id += 1
 
         self.class_name = detection["class_name"]
-        self.class_id = detection["class_id"]
-        self.score = detection["score"]
+        self.class_id = detection.get("class_id", 0)
+        self.score = detection.get("score", 0.0)
 
         # State vector: [x, y, z, vx, vy, vz, sx, sy, sz]
         self.x = np.zeros(9, dtype=np.float32)
@@ -87,6 +87,10 @@ class Track3D:
         # Extrapolate covariance: P = F * P * F^T + Q
         self.P = F @ self.P @ F.T + Q
 
+        # Numerical stability: clamp covariance diagonal and preserve symmetry
+        np.fill_diagonal(self.P, np.clip(np.diag(self.P), 1e-4, 100.0))
+        self.P = 0.5 * (self.P + self.P.T)
+
         self.age += 1
         self.lost_frames += 1
 
@@ -121,9 +125,18 @@ class Track3D:
         # Updated state: x = x + K*y
         self.x = self.x + K @ y
 
+        # Physical safety contract: clamp estimated velocities to plausible AMR limits
+        self.x[3:6] = np.clip(self.x[3:6], -5.0, 5.0)
+        # Clamp dimensions to strictly positive bounds
+        self.x[6:9] = np.maximum(0.1, self.x[6:9])
+
         # Updated covariance: P = (I - K*H) * P
         I = np.eye(9, dtype=np.float32)
         self.P = (I - K @ H) @ self.P
+
+        # Enforce positive definiteness and symmetry
+        np.fill_diagonal(self.P, np.clip(np.diag(self.P), 1e-4, 50.0))
+        self.P = 0.5 * (self.P + self.P.T)
 
         self.hits += 1
         self.lost_frames = 0
@@ -199,6 +212,18 @@ class MultiObjectTracker3D:
         Run predict -> associate -> update lifecycle.
         Returns list of active, confirmed 3D tracks with persistent IDs and velocities.
         """
+        # Defensive input contract: filter out non-finite, invalid, or unmeasured observations
+        valid_detections = []
+        for det in detections_3d:
+            if not det.get("is_valid_3d", True):
+                continue
+            x = det.get("x", np.nan)
+            y = det.get("y", np.nan)
+            z = det.get("z", np.nan)
+            if np.isfinite(x) and np.isfinite(y) and np.isfinite(z):
+                valid_detections.append(det)
+        detections_3d = valid_detections
+
         # Calculate elapsed dt
         if self.last_timestamp is None:
             dt = 0.033
