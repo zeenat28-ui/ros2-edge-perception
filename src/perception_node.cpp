@@ -81,7 +81,7 @@ PerceptionNode::PerceptionNode(const rclcpp::NodeOptions& options)
 
     // Launch asynchronous worker
     worker_thread_ = std::thread(&PerceptionNode::inference_worker, this);
-    RCLCPP_INFO(get_logger(), "C++20 Zero-Copy Tier-1 Perception Node initialized successfully.");
+    RCLCPP_INFO(get_logger(), "C++20 Edge Perception Node initialized successfully.");
 }
 
 PerceptionNode::~PerceptionNode() {
@@ -144,7 +144,7 @@ void PerceptionNode::init_onnx_session(const std::string& model_path, const std:
 }
 
 void PerceptionNode::on_image(const sensor_msgs::msg::Image::ConstSharedPtr msg) {
-    // True zero-copy pointer view into ROS 2 message memory
+    // Direct buffer view over ROS 2 message memory, followed by lifetime-safe clone into thread buffer
     cv::Mat rgb_view(msg->height, msg->width, CV_8UC3, const_cast<uint8_t*>(&msg->data[0]), msg->step);
 
     {
@@ -585,7 +585,7 @@ void PerceptionNode::publish_diagnostics(
     diag.header.stamp = this->now();
 
     diagnostic_msgs::msg::DiagnosticStatus status;
-    status.name = "Perception Pipeline (C++20 Zero-Copy Tier-1)";
+    status.name = "Perception Pipeline (C++20 Direct Ingestion)";
     status.hardware_id = device_;
     status.level = (lat_total <= 100.0) ? diagnostic_msgs::msg::DiagnosticStatus::OK : diagnostic_msgs::msg::DiagnosticStatus::WARN;
     status.message = (lat_total <= 100.0) ? "Nominal operation" : "Latency exceeds 100ms threshold";

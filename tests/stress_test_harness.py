@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Enterprise 24-Hour & 5,000+ Frame Stress-Test & Memory Leak Certification Harness.
+Component-Level Stress & Memory Evaluation Harness (In-Process Benchmark).
 
-Performs:
+Evaluates:
 1. Automated RSS memory profiling over thousands of frames (leak detection: ΔRSS).
 2. High-precision latency percentile computation: P50, P90, P95, P99, and jitter.
-3. In-process pipeline stress testing (ONNX Runtime + Kalman Filter) and ROS 2 network integration.
-4. Generates enterprise audit report in JSON and formatted Markdown.
+3. In-process pipeline stress testing (Preprocessing + ONNX Runtime + Depth ROI Filtering + 3D Kalman Tracking).
+4. Generates empirical component benchmark report.
 
 Usage:
     python3 tests/stress_test_harness.py --frames 5000 --model models/yolov8n.onnx
@@ -28,16 +28,15 @@ try:
 except ImportError:
     HAS_PSUTIL = False
 
-try:
-    import onnxruntime as ort
-    HAS_ORT = True
-except ImportError:
-    HAS_ORT = False
-
 # Ensure workspace root is in sys.path for direct execution
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from ros2_edge_perception.tracker_3d import MultiObjectTracker3D
+from ros2_edge_perception.perception_node import (
+    preprocess_letterbox,
+    deproject_pixel_to_3d,
+    filter_depth_roi,
+)
 
 
 class EnterpriseStressTester:
@@ -58,18 +57,13 @@ class EnterpriseStressTester:
         # Memory records (Megabytes)
         self.memory_samples: List[Tuple[int, float]] = []
 
-        # Initialize ONNX Runtime Session
-        if HAS_ORT and os.path.exists(model_path):
-            opts = ort.SessionOptions()
-            opts.intra_op_num_threads = 4
-            opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            self.session = ort.InferenceSession(model_path, opts, providers=["CPUExecutionProvider"])
-            self.input_name = self.session.get_inputs()[0].name
-            self.output_name = self.session.get_outputs()[0].name
+        # Initialize OpenCV DNN Engine for robust, cross-platform ONNX execution
+        if os.path.exists(model_path):
+            self.net = cv2.dnn.readNetFromONNX(model_path)
+            self.has_model = True
         else:
-            self.session = None
-            self.input_name = ""
-            self.output_name = ""
+            self.net = None
+            self.has_model = False
 
         # Initialize Level-5 3D Kalman Tracker
         self.tracker = MultiObjectTracker3D(max_lost_frames=5, match_distance_threshold=1.5)
@@ -106,7 +100,7 @@ class EnterpriseStressTester:
         print(f"================================================================================")
         print(f"ENTERPRISE STRESS & MEMORY AUDIT: {self.num_frames} Frames Benchmark")
         print(f"Model: {self.model_path}")
-        print(f"PID: {os.getpid()} | PSUtil available: {HAS_PSUTIL} | ORT available: {HAS_ORT}")
+        print(f"PID: {os.getpid()} | PSUtil available: {HAS_PSUTIL} | Engine: OpenCV DNN ONNX")
         print(f"================================================================================")
 
         # Record Initial Baseline Memory
@@ -193,50 +187,59 @@ class EnterpriseStressTester:
         """Execute pre-processing, inference, 3D deprojection, and Kalman tracking."""
         t0 = time.perf_counter()
 
-        # 1. Preprocessing (letterbox to 640x640, float32, CHW format)
+        # 1. Preprocessing (letterbox to 640x640, float32, CHW format using production function)
         t_pre_start = time.perf_counter()
-        img_h, img_w = rgb.shape[:2]
-        blob = cv2.resize(rgb, (640, 640))
-        blob = blob[:, :, ::-1].transpose(2, 0, 1).astype(np.float32) / 255.0
-        blob = np.expand_dims(blob, axis=0)
+        blob, r, (dw, dh) = preprocess_letterbox(rgb, (640, 640))
         t_pre = (time.perf_counter() - t_pre_start) * 1000.0
 
         # 2. Inference
         t_inf_start = time.perf_counter()
-        if self.session:
-            raw_output = self.session.run([self.output_name], {self.input_name: blob})[0]
+        if self.has_model:
+            self.net.setInput(blob)
+            raw_output = self.net.forward()
         else:
             # Synthetic output for benchmark testing when ONNX model is not present
             raw_output = np.zeros((1, 84, 8400), dtype=np.float32)
         t_inf = (time.perf_counter() - t_inf_start) * 1000.0
 
-        # 3. Post-processing & 3D Kalman Tracking
+        # 3. Post-processing & 3D Kalman Tracking using real deprojection and depth ROI filtering
         t_post_start = time.perf_counter()
-        # Simulated detections representing real clustered objects
-        detections_3d = [
-            {
-                "class_name": "person",
-                "class_id": 0,
-                "score": 0.88,
-                "x": 0.25 * np.sin(t0),
-                "y": -0.15,
-                "z": 2.2 + 0.5 * np.cos(t0),
-                "size_x": 0.55,
-                "size_y": 0.60,
-                "size_z": 1.70,
-            },
-            {
-                "class_name": "obstacle",
-                "class_id": 1,
-                "score": 0.75,
-                "x": 1.2,
-                "y": 0.1,
-                "z": 3.1,
-                "size_x": 0.8,
-                "size_y": 0.8,
-                "size_z": 0.8,
-            },
+        depth_m = depth.astype(np.float32) / 1000.0
+        fx, fy, cx, cy = 554.25, 554.25, 320.0, 240.0
+
+        # Dynamic target extraction and metric 3D calculation
+        t_cx = int(320 + 150 * np.sin(t0 * 0.05))
+        t_cy = int(240 + 80 * np.cos(t0 * 0.05))
+        t_rx = int((t0 * 100) % 550)
+        candidate_boxes = [
+            {"class_name": "person", "class_id": 0, "score": 0.88, "bbox": [t_cx - 35, t_cy - 35, 70, 70]},
+            {"class_name": "obstacle", "class_id": 1, "score": 0.75, "bbox": [t_rx, 320, 60, 80]},
         ]
+
+        detections_3d = []
+        for det in candidate_boxes:
+            bx, by, bw, bh = det["bbox"]
+            x1, y1 = max(0, bx), max(0, by)
+            x2, y2 = min(640, bx + bw), min(480, by + bh)
+            if x2 > x1 and y2 > y1:
+                roi = depth_m[y1:y2, x1:x2]
+                z = filter_depth_roi(roi, min_depth=0.2, max_depth=10.0)
+                if z is not None:
+                    u_c = (x1 + x2) / 2.0
+                    v_c = (y1 + y2) / 2.0
+                    x, y, z = deproject_pixel_to_3d(u_c, v_c, z, fx, fy, cx, cy)
+                    detections_3d.append({
+                        "class_name": det["class_name"],
+                        "class_id": det["class_id"],
+                        "score": det["score"],
+                        "x": x,
+                        "y": y,
+                        "z": z,
+                        "size_x": (bw * z) / fx,
+                        "size_y": (bh * z) / fy,
+                        "size_z": 0.6,
+                    })
+
         tracked_objects = self.tracker.update(detections_3d, timestamp=t0)
         t_post = (time.perf_counter() - t_post_start) * 1000.0
 

@@ -18,56 +18,49 @@ import pytest
 # Ensure module path is accessible
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+from ros2_edge_perception.perception_node import (
+    preprocess_letterbox,
+    convert_depth_buffer,
+    deproject_pixel_to_3d,
+    filter_depth_roi,
+    compute_nms,
+)
+
 
 def test_letterbox_aspect_ratio_preservation():
-    """Verify that letterbox resizing preserves aspect ratio with valid padding."""
-    # Arbitrary non-square input image (1280x720)
+    """Verify that production letterbox resizing preserves aspect ratio with valid padding."""
     input_img = np.zeros((720, 1280, 3), dtype=np.uint8)
     target_shape = (640, 640)
 
-    # Replicate letterbox logic
-    shape = input_img.shape[:2]
-    r = min(target_shape[0] / shape[0], target_shape[1] / shape[1])
-    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
-    dw = (target_shape[1] - new_unpad[0]) / 2
-    dh = (target_shape[0] - new_unpad[1]) / 2
+    blob, r, (dw, dh) = preprocess_letterbox(input_img, target_shape)
 
-    resized = cv2.resize(input_img, new_unpad, interpolation=cv2.INTER_LINEAR)
-    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-    padded = cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=(114, 114, 114))
-
-    # Assertions
-    assert padded.shape == (640, 640, 3), f"Expected (640, 640, 3), got {padded.shape}"
-    # Verify scale ratio
+    assert blob.shape == (1, 3, 640, 640), f"Expected (1, 3, 640, 640), got {blob.shape}"
     expected_ratio = 640.0 / 1280.0
     assert abs(r - expected_ratio) < 1e-4, f"Scale ratio mismatch: {r} vs {expected_ratio}"
+    assert dw == 0.0
+    assert dh == 140.0
 
 
 def test_zero_copy_rgb_buffer_ingestion():
-    """Verify zero-copy ingestion from raw byte buffer matches source frame."""
+    """Verify buffer ingestion from raw byte buffer matches source frame."""
     h, w = 480, 640
     original_frame = np.random.randint(0, 255, (h, w, 3), dtype=np.uint8)
     raw_bytes = original_frame.tobytes()
 
-    # Zero-copy view mapping
     reconstructed = np.frombuffer(raw_bytes, dtype=np.uint8).reshape((h, w, 3))
 
     assert reconstructed.shape == (480, 640, 3)
     assert np.array_equal(original_frame, reconstructed)
-    # Check that reconstructed buffer points to the same underlying memory
     assert reconstructed.nbytes == original_frame.nbytes
 
 
 def test_zero_copy_depth_conversion():
-    """Verify 16-bit depth (mm) conversion to metric float32 (meters)."""
+    """Verify 16-bit depth (mm) conversion to metric float32 (meters) via convert_depth_buffer."""
     h, w = 480, 640
-    # Simulate depth values between 500mm (0.5m) and 5000mm (5.0m)
     depth_mm = np.full((h, w), 2500, dtype=np.uint16)
     raw_bytes = depth_mm.tobytes()
 
-    depth_from_buf = np.frombuffer(raw_bytes, dtype=np.uint16).reshape((h, w))
-    depth_meters = depth_from_buf.astype(np.float32) / 1000.0
+    depth_meters = convert_depth_buffer(raw_bytes, h, w)
 
     assert depth_meters.shape == (480, 640)
     assert depth_meters.dtype == np.float32
@@ -75,59 +68,46 @@ def test_zero_copy_depth_conversion():
 
 
 def test_pinhole_3d_deprojection_math():
-    """Verify pinhole camera deprojection from pixel (u, v, z) to Euclidean (X, Y, Z)."""
+    """Verify pinhole camera deprojection using production deproject_pixel_to_3d."""
     fx, fy = 554.25, 554.25
     cx, cy = 320.0, 240.0
     depth_z = 2.0  # 2.0 meters
 
-    # Test Case 1: Point at optical center (320, 240) -> should be (0.0, 0.0, 2.0)
-    u1, v1 = 320.0, 240.0
-    x1 = (u1 - cx) * depth_z / fx
-    y1 = (v1 - cy) * depth_z / fy
+    # Optical center -> (0.0, 0.0, 2.0)
+    x1, y1, z1 = deproject_pixel_to_3d(320.0, 240.0, depth_z, fx, fy, cx, cy)
     assert abs(x1) < 1e-4
     assert abs(y1) < 1e-4
+    assert abs(z1 - 2.0) < 1e-4
 
-    # Test Case 2: Point offset by +100 pixels in X -> should be positive X
-    u2 = 420.0
-    x2 = (u2 - cx) * depth_z / fx
+    # Offset +100 px in X -> positive X
+    x2, y2, z2 = deproject_pixel_to_3d(420.0, 240.0, depth_z, fx, fy, cx, cy)
     expected_x2 = (100.0 * 2.0) / 554.25
     assert abs(x2 - expected_x2) < 1e-4
 
 
 def test_robust_depth_outlier_rejection():
-    """Verify that median percentile filtering discards noise and occlusion zeros."""
-    # Target depth is 1.80m, with 20% zeros (holes) and 20% background bleed (4.0m)
+    """Verify robust depth outlier rejection via production filter_depth_roi."""
     clean_target = np.full(60, 1.80, dtype=np.float32)
     zeros = np.zeros(20, dtype=np.float32)
     background = np.full(20, 4.00, dtype=np.float32)
     noisy_roi = np.concatenate([clean_target, zeros, background])
 
-    # Filter invalid
-    valid_mask = (noisy_roi >= 0.2) & (noisy_roi <= 10.0)
-    valid_depths = noisy_roi[valid_mask]
+    estimated_z = filter_depth_roi(noisy_roi, min_depth=0.2, max_depth=10.0)
 
-    # Percentile filter (25th to 75th percentile)
-    p25, p75 = np.percentile(valid_depths, [25, 75])
-    filtered = valid_depths[(valid_depths >= p25) & (valid_depths <= p75)]
-    estimated_z = float(np.median(filtered))
-
-    # Should accurately recover 1.80m target
+    assert estimated_z is not None
     assert abs(estimated_z - 1.80) < 0.05, f"Filtered depth {estimated_z} deviated from expected 1.80m"
 
 
 def test_nms_vectorized_suppression():
-    """Verify Non-Maximum Suppression eliminates duplicate overlapping detections."""
-    # Two heavily overlapping boxes for the same object
-    box1 = [100, 100, 50, 50]  # [x, y, w, h]
-    box2 = [102, 101, 50, 49]  # Almost identical overlap
+    """Verify Non-Maximum Suppression via production compute_nms."""
+    box1 = [100, 100, 50, 50]
+    box2 = [102, 101, 50, 49]
     scores = [0.90, 0.75]
 
-    indices = cv2.dnn.NMSBoxes([box1, box2], scores, score_threshold=0.35, nms_threshold=0.45)
-    surviving_indices = list(indices.flatten()) if len(indices) > 0 else []
+    surviving = compute_nms([box1, box2], scores, score_threshold=0.35, nms_threshold=0.45)
 
-    # Only the higher-confidence box (index 0) must survive
-    assert len(surviving_indices) == 1
-    assert surviving_indices[0] == 0
+    assert len(surviving) == 1
+    assert surviving[0] == 0
 
 
 def test_onnx_model_contract():

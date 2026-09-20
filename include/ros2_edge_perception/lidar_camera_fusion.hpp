@@ -55,6 +55,8 @@ struct FusedDetection3D {
     float qw{1.0f};     // Quaternion W
     size_t lidar_point_count{0};
     bool fused_with_lidar{false};
+    bool is_valid_3d{true};
+    std::string geometry_status{"LIDAR_FUSED"};
 };
 
 class LidarCameraFusionEngine {

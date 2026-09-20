@@ -115,6 +115,32 @@ class TestLidarCameraFusion:
         assert abs(qy - expected_qy) < 1e-3
         assert abs(qw - expected_qw) < 1e-3
 
+    def test_fallback_no_lidar_does_not_fabricate_geometry(self):
+        """Verify that when LiDAR points and camera depth are missing, 3D geometry is NOT fabricated."""
+        detections_2d_no_depth = [
+            {"class_name": "obstacle", "class_id": 1, "score": 0.8, "x1": 100.0, "y1": 100.0, "x2": 200.0, "y2": 200.0}
+        ]
+        # Empty LiDAR point cloud
+        empty_lidar = np.empty((0, 3), dtype=np.float32)
+        fused = self.fusion.fuse(detections_2d_no_depth, empty_lidar)
+
+        assert len(fused) == 1
+        obj = fused[0]
+        assert obj["is_valid_3d"] is False
+        assert obj["geometry_status"] == "INVALID_UNMEASURED_DEPTH"
+        assert math.isnan(obj["z"])
+
+        # But when camera depth is available, use it without fabricating LiDAR
+        detections_2d_with_depth = [
+            {"class_name": "obstacle", "class_id": 1, "score": 0.8, "x1": 100.0, "y1": 100.0, "x2": 200.0, "y2": 200.0, "depth": 2.5}
+        ]
+        fused_cam = self.fusion.fuse(detections_2d_with_depth, empty_lidar)
+        assert len(fused_cam) == 1
+        obj_cam = fused_cam[0]
+        assert obj_cam["is_valid_3d"] is True
+        assert obj_cam["geometry_status"] == "CAMERA_DEPTH_ONLY"
+        assert abs(obj_cam["z"] - 2.5) < 1e-4
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

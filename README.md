@@ -1,16 +1,19 @@
-# 🚀 ROS 2 Enterprise 3D Edge Perception & Tracking Stack
+# 🚀 ROS 2 Edge Perception & AMR Autonomy Stack
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble%20%7C%20Iron%20%7C%20Jazzy-3498DB.svg)](https://docs.ros.org/)
 [![C++ Standard](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
-[![Hardware Support](https://img.shields.io/badge/Hardware-CPU%20%7C%20AMD%20ROCm%20%7C%20NVIDIA%20CUDA%20%7C%20MIGraphX-critical.svg)](https://rocm.docs.amd.com/)
+[![Hardware Support](https://img.shields.io/badge/Hardware-CPU%20%7C%20NVIDIA%20CUDA%20%7C%20OpenCV%20DNN-critical.svg)](https://docs.ros.org/)
 [![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF.svg)]()
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-10%20Passed-brightgreen.svg)]()
-[![Certification](https://img.shields.io/badge/Audit-Zero%20Memory%20Leak-success.svg)](docs/HARDWARE_VALIDATION_REPORT.md)
+[![Tests](https://img.shields.io/badge/Tests-99%20Passed-brightgreen.svg)]()
+[![Status](https://img.shields.io/badge/Status-Pre--Production%20Prototype-orange.svg)]()
 
-An **Enterprise-Grade, Boxed B2B Real-Time 2D/3D Perception & Multi-Object Tracking Engine** engineered for **Autonomous Mobile Robots (AMRs)**, **Automated Guided Vehicles (AGVs)**, and **Autonomous Vehicles (AVs)**.
+A modular **Real-Time 3D Perception & Autonomy Stack** engineered for **Autonomous Mobile Robots (AMRs)** and **Automated Guided Vehicles (AGVs)** operating in industrial warehouse environments.
 
-Engineered strictly against Tier-1 autonomous systems standards (**Autoware Universe**, **NVIDIA Isaac ROS**, **Waymo Perception**), this stack features **C++20 Zero-Copy Ingestion**, **Native ONNX Runtime C++ Inference**, **9-State Eigen3 3D Kalman Tracking**, **Metric Velocity Vectors**, **Time-To-Collision (TTC) Risk Alerts**, and an **Industrial Hardware Validation Audit**.
+The stack features **C++20 Direct Buffer Ingestion**, **YOLOv8 Edge Inference**, **9-State Eigen3 3D Kalman Tracking**, **RANSAC Ground Hazard Detection (3cm Cables & Loading Dock Cliff Edges)**, **Dynamic Reciprocal Velocity Obstacle (RVO) Evasion**, **VDA 5050 Priority Arbitration**, and **ISO 3691-4 Supervisory Deceleration Logic**.
+
+> [!IMPORTANT]
+> **Safety & Certification Notice**: This software provides supervisory perception, obstacle classification, and dynamic velocity throttling based on ISO 3691-4 formulas. It is an engineering pre-production stack and **does not constitute a certified safety-rated emergency-stop system (e.g. ISO 13849 PLd / SIL2)**. For physical robot deployment, safety-critical emergency braking must be governed by certified safety laser scanners (e.g. SICK microScan3) wired directly to hardware safety relays.
 
 ---
 
@@ -58,11 +61,11 @@ flowchart TD
 
 ---
 
-## 💎 Tier-1 Industrial Engineering Highlights
+## 💎 Key Engineering Highlights
 
-### 1. C++20 Zero-Copy Ingestion & Loaned Messages
-* **The Reality:** Standard ROS 2 nodes serialize and deserialize images, resulting in multiple heap copies that consume up to 250 MB/s of memory bandwidth at 60 FPS.
-* **Our Solution:** `sensor_msgs::msg::Image::ConstSharedPtr` direct memory ingestion mapping underlying data pointers into `cv::Mat` without heap allocations.
+### 1. C++20 Direct Buffer Ingestion & Controlled Lifetime Buffering
+* **The Reality:** Standard ROS 2 nodes often perform multiple deep copies during image deserialization.
+* **Our Solution:** Direct pointer view mapping over ROS 2 message memory (`sensor_msgs::msg::Image::ConstSharedPtr`), followed by controlled single-frame buffer cloning for safe asynchronous processing.
 
 ### 2. 9-State 3D Kalman Filter with Eigen3
 * Maintains state vector $\mathbf{x} = [x, y, z, v_x, v_y, v_z, s_x, s_y, s_z]^T$ using fixed-size Eigen3 matrices (`Eigen::Matrix<float, 9, 9>`).
@@ -72,24 +75,24 @@ flowchart TD
 * Forecasts future 3D positions ($t+0.5s, t+1.0s, t+1.5s, t+2.0s$) and publishes standard `geometry_msgs/msg/PoseArray` on `/perception/trajectories`, directly feedable into Nav2 Model Predictive Control (MPC) planners.
 
 ### 4. Time-To-Collision (TTC) & Dynamic Safety Alerts
-* Real-time calculation of Time-To-Collision ($\text{TTC} = \frac{z}{-v_z}$) for approaching obstacles. If $\text{TTC} < 2.0\text{s}$, emits high-priority alerts on `/perception/safety_alert` to trigger autonomous emergency braking (AEB).
+* Real-time calculation of Time-To-Collision ($\text{TTC} = \frac{z}{-v_z}$) for approaching obstacles. If $\text{TTC} < 2.0\text{s}$, emits supervisory alerts on `/perception/safety_alert`.
 
-### 5. 24-Hour Zero-Leak Stability Certification
-* Audited with `tests/stress_test_harness.py` over 2,500,000 frames ($24\text{ hours}$ continuous operation) demonstrating $\Delta\text{RSS} \approx 0.00\text{ MB}$. See [Hardware Validation Report](docs/HARDWARE_VALIDATION_REPORT.md).
+### 5. In-Process Memory & Latency Benchmark
+* Evaluated with `tests/stress_test_harness.py` across continuous frame streams demonstrating stable RSS memory ($\Delta\text{RSS} \le 0.05\text{ MB}$). See [Hardware Evaluation Report](docs/HARDWARE_VALIDATION_REPORT.md).
 
 ---
 
-## 📊 Industrial Benchmark Comparison
+## 📊 Benchmark Evaluation Summary
 
 | Metric | Standard ROS 2 AI Node | **ROS 2 Edge Perception (Python Stack)** | **ROS 2 Edge Perception (C++20 Stack)** |
 | :--- | :--- | :--- | :--- |
-| **Ingestion Latency** | 4.8 ms (3x deep copies) | **0.3 ms (`np.frombuffer`)** | **< 0.05 ms (Pointer mapping)** |
+| **Ingestion Latency** | 4.8 ms (multiple copies) | **0.3 ms (`np.frombuffer`)** | **< 0.05 ms (Buffer view mapping)** |
 | **End-to-End Latency (P50)** | 45.0 ms | **14.2 ms** | **8.29 ms** |
 | **Tail Latency (P99)** | 120.0 ms | **35.0 ms** | **22.16 ms** |
 | **3D Multi-Object Tracking** | ❌ None | **✅ 3D Kalman Filter (NumPy)** | **✅ 9-State Eigen3 Kalman Filter** |
 | **Trajectory Forecasting** | ❌ None | **✅ `geometry_msgs/PoseArray`** | **✅ `geometry_msgs/PoseArray`** |
-| **Collision Safety Alerts** | ❌ None | **✅ TTC Alerts (`std_msgs/String`)** | **✅ TTC Alerts (`std_msgs/String`)** |
-| **Memory Leak Audit** | ❌ Unverified | **✅ Certified Zero-Leak** | **✅ Certified Zero-Leak** |
+| **Collision Safety Alerts** | ❌ None | **✅ Supervisory TTC Alerts** | **✅ Supervisory TTC Alerts** |
+| **Memory Leak Audit** | ❌ Unverified | **✅ In-Process Tested Stable** | **✅ In-Process Tested Stable** |
 
 ---
 

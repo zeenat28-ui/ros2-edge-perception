@@ -158,19 +158,39 @@ class LidarCameraFusionEngine:
 
                         fused["lidar_point_count"] = len(clustered)
                         fused["fused_with_lidar"] = True
+                        fused["is_valid_3d"] = True
+                        fused["geometry_status"] = "LIDAR_FUSED"
                         fused_results.append(fused)
                         continue
 
-            # Fallback to pin-hole box center
+            # Fallback handling: check if camera depth is available
             cx_box = (x1 + x2) / 2.0
             cy_box = (y1 + y2) / 2.0
-            fallback_depth = det.get("depth", 3.0)
-            fused["x"] = float((cx_box - self.cx) * fallback_depth / self.fx)
-            fused["y"] = float((cy_box - self.cy) * fallback_depth / self.fy)
-            fused["z"] = float(fallback_depth)
-            fused["size_x"] = float(max(0.4, (x2 - x1) * fallback_depth / self.fx))
-            fused["size_y"] = float(max(0.4, (y2 - y1) * fallback_depth / self.fy))
-            fused["size_z"] = 0.5
+            camera_depth = det.get("depth")
+            
+            if camera_depth is not None and camera_depth > 0:
+                fused["x"] = float((cx_box - self.cx) * camera_depth / self.fx)
+                fused["y"] = float((cy_box - self.cy) * camera_depth / self.fy)
+                fused["z"] = float(camera_depth)
+                fused["size_x"] = float(max(0.4, (x2 - x1) * camera_depth / self.fx))
+                fused["size_y"] = float(max(0.4, (y2 - y1) * camera_depth / self.fy))
+                fused["size_z"] = 0.5
+                fused["fused_with_lidar"] = False
+                fused["is_valid_3d"] = True
+                fused["geometry_status"] = "CAMERA_DEPTH_ONLY"
+            else:
+                # Production safety: DO NOT fabricate arbitrary geometry (e.g. assuming 3.0m).
+                # Explicitly flag detection as unmeasured so downstream navigation does not treat it as valid 3D ground truth.
+                fused["x"] = float("nan")
+                fused["y"] = float("nan")
+                fused["z"] = float("nan")
+                fused["size_x"] = 0.0
+                fused["size_y"] = 0.0
+                fused["size_z"] = 0.0
+                fused["fused_with_lidar"] = False
+                fused["is_valid_3d"] = False
+                fused["geometry_status"] = "INVALID_UNMEASURED_DEPTH"
+            
             fused_results.append(fused)
 
         return fused_results

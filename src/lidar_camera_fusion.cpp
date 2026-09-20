@@ -1,6 +1,8 @@
 #include "ros2_edge_perception/lidar_camera_fusion.hpp"
 #include <numeric>
 #include <cmath>
+#include <limits>
+#include <string>
 
 namespace ros2_edge_perception {
 
@@ -144,23 +146,24 @@ std::vector<FusedDetection3D> LidarCameraFusionEngine::fuse(
 
                 fused.lidar_point_count = clustered_points.size();
                 fused.fused_with_lidar = true;
+                fused.is_valid_3d = true;
+                fused.geometry_status = "LIDAR_FUSED";
                 fused_results.push_back(fused);
                 continue;
             }
         }
 
         // Fallback if no LiDAR points available inside this box:
-        // Use pin-hole projection of 2D box centroid at default distance
-        float cx_box = (det.x1 + det.x2) / 2.0f;
-        float cy_box = (det.y1 + det.y2) / 2.0f;
-        float fallback_depth = 3.0f; // Nominal fallback
-        fused.x = (cx_box - intrinsics_.cx) * fallback_depth / intrinsics_.fx;
-        fused.y = (cy_box - intrinsics_.cy) * fallback_depth / intrinsics_.fy;
-        fused.z = fallback_depth;
-        fused.size_x = std::max(0.4f, (det.x2 - det.x1) * fallback_depth / intrinsics_.fx);
-        fused.size_y = std::max(0.4f, (det.y2 - det.y1) * fallback_depth / intrinsics_.fy);
-        fused.size_z = 0.5f;
+        // Production safety: mark explicitly as unmeasured rather than fabricating arbitrary 3.0m geometry.
+        fused.x = std::numeric_limits<float>::quiet_NaN();
+        fused.y = std::numeric_limits<float>::quiet_NaN();
+        fused.z = std::numeric_limits<float>::quiet_NaN();
+        fused.size_x = 0.0f;
+        fused.size_y = 0.0f;
+        fused.size_z = 0.0f;
         fused.fused_with_lidar = false;
+        fused.is_valid_3d = false;
+        fused.geometry_status = "INVALID_UNMEASURED_DEPTH";
         fused_results.push_back(fused);
     }
 

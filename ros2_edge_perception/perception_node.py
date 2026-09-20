@@ -19,24 +19,56 @@ from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
-import rclpy
-from rcl_interfaces.msg import SetParametersResult
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
-from geometry_msgs.msg import Pose, PoseArray, Point
-from std_msgs.msg import String as StringMsg
-from sensor_msgs.msg import CameraInfo, Image, PointCloud2
-from vision_msgs.msg import (
-    BoundingBox2D,
-    BoundingBox3D,
-    Detection2D,
-    Detection2DArray,
-    Detection3D,
-    Detection3DArray,
-    ObjectHypothesisWithPose,
-)
-from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+try:
+    import rclpy
+    from rcl_interfaces.msg import SetParametersResult
+    from rclpy.node import Node
+    from rclpy.parameter import Parameter
+    from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+    from geometry_msgs.msg import Pose, PoseArray, Point
+    from std_msgs.msg import String as StringMsg
+    from sensor_msgs.msg import CameraInfo, Image, PointCloud2
+    from vision_msgs.msg import (
+        BoundingBox2D,
+        BoundingBox3D,
+        Detection2D,
+        Detection2DArray,
+        Detection3D,
+        Detection3DArray,
+        ObjectHypothesisWithPose,
+    )
+    from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+    HAS_RCLPY = True
+except ImportError:
+    HAS_RCLPY = False
+    class Node:
+        """Fallback mock for Node when rclpy is not installed."""
+        def __init__(self, *args, **kwargs):
+            pass
+    class Parameter:
+        pass
+    class SetParametersResult:
+        successful: bool = True
+    class CameraInfo: pass
+    class Image: pass
+    class PointCloud2: pass
+    class Pose: pass
+    class PoseArray: pass
+    class Point: pass
+    class StringMsg: pass
+    class Detection2D: pass
+    class Detection2DArray: pass
+    class Detection3D: pass
+    class Detection3DArray: pass
+    class BoundingBox2D: pass
+    class BoundingBox3D: pass
+    class ObjectHypothesisWithPose: pass
+    class DiagnosticArray: pass
+    class DiagnosticStatus: pass
+    class KeyValue: pass
+    class HistoryPolicy: pass
+    class QoSProfile: pass
+    class ReliabilityPolicy: pass
 
 # Import 3D Multi-Object Tracker (Level 5 Tracking & Velocity Engine)
 try:
@@ -78,6 +110,91 @@ except ImportError:
                 "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink",
                 "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
             ]
+
+
+def preprocess_letterbox(
+    img: np.ndarray,
+    new_shape: Tuple[int, int] = (640, 640),
+    color: Tuple[int, int, int] = (114, 114, 114),
+) -> Tuple[np.ndarray, float, Tuple[int, int]]:
+    """
+    Aspect-ratio preserving letterbox resizing and normalization.
+    Returns:
+        blob: Preprocessed CHW normalized float32 tensor [1, 3, H, W].
+        r: Scale ratio applied.
+        (dw, dh): Padding added to width and height.
+    """
+    shape = img.shape[:2]
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
+    dw = (new_shape[1] - new_unpad[0]) / 2
+    dh = (new_shape[0] - new_unpad[1]) / 2
+
+    if shape[::-1] != new_unpad:
+        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    padded_img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+
+    rgb = cv2.cvtColor(padded_img, cv2.COLOR_BGR2RGB)
+    tensor = rgb.transpose((2, 0, 1)).astype(np.float32) / 255.0
+    blob = np.ascontiguousarray(np.expand_dims(tensor, axis=0))
+    return blob, r, (dw, dh)
+
+
+def convert_depth_buffer(raw_bytes: bytes, height: int, width: int) -> np.ndarray:
+    """
+    Convert 16UC1 (raw uint16 millimeters) byte buffer into metric float32 array (meters).
+    """
+    depth_raw = np.frombuffer(raw_bytes, dtype=np.uint16).reshape((height, width))
+    return depth_raw.astype(np.float32) / 1000.0
+
+
+def deproject_pixel_to_3d(
+    u: float, v: float, z: float,
+    fx: float, fy: float, cx: float, cy: float
+) -> Tuple[float, float, float]:
+    """
+    Pinhole camera model Euclidean deprojection from 2D pixel + depth to metric (X, Y, Z).
+    """
+    x = (u - cx) * z / fx
+    y = (v - cy) * z / fy
+    return float(x), float(y), float(z)
+
+
+def filter_depth_roi(
+    roi_depths: np.ndarray,
+    min_depth: float = 0.2,
+    max_depth: float = 10.0
+) -> Optional[float]:
+    """
+    Robust percentile-based depth ROI filtering rejecting sensor holes and background edge bleed.
+    """
+    valid_mask = (roi_depths >= min_depth) & (roi_depths <= max_depth) & (~np.isnan(roi_depths))
+    valid_depths = roi_depths[valid_mask]
+    if len(valid_depths) < 10:
+        return None
+    p25, p75 = np.percentile(valid_depths, [25, 75])
+    filtered = valid_depths[(valid_depths >= p25) & (valid_depths <= p75)]
+    if len(filtered) == 0:
+        return float(np.median(valid_depths))
+    return float(np.median(filtered))
+
+
+def compute_nms(
+    boxes: List[List[float]],
+    scores: List[float],
+    score_threshold: float = 0.35,
+    nms_threshold: float = 0.45
+) -> List[int]:
+    """
+    Non-maximum suppression box deduplication using OpenCV DNN.
+    """
+    indices = cv2.dnn.NMSBoxes(boxes, scores, score_threshold=score_threshold, nms_threshold=nms_threshold)
+    if len(indices) == 0:
+        return []
+    return list(indices.flatten())
 
 
 class PerceptionNode(Node):
@@ -644,27 +761,11 @@ class PerceptionNode(Node):
                 continue
 
             roi = depth_m[y1:y2, x1:x2]
-
-            # Filter valid depths within configured range
-            valid_mask = (roi >= self.min_depth_m) & (roi <= self.max_depth_m) & (~np.isnan(roi))
-            valid_depths = roi[valid_mask]
-
-            if len(valid_depths) < 10:
-                continue  # Insufficient depth points for reliable 3D position
-
-            # Robust Median Filter: 25th to 75th percentile to eliminate edge noise
-            p25, p75 = np.percentile(valid_depths, [25, 75])
-            filtered = valid_depths[(valid_depths >= p25) & (valid_depths <= p75)]
-            if len(filtered) == 0:
+            z = filter_depth_roi(roi, min_depth=self.min_depth_m, max_depth=self.max_depth_m)
+            if z is None:
                 continue
 
-            z = float(np.median(filtered))  # Estimated depth in meters
-
-            # Pin-hole back-projection: X = (u - cx)*Z / fx, Y = (v - cy)*Z / fy
-            u_center = det["cx"]
-            v_center = det["cy"]
-            x = (u_center - cx) * z / fx
-            y = (v_center - cy) * z / fy
+            x, y, z = deproject_pixel_to_3d(det["cx"], det["cy"], z, fx, fy, cx, cy)
 
             # Metric 3D bounding box dimensions
             size_x = (bw * z) / fx
@@ -743,23 +844,7 @@ class PerceptionNode(Node):
         new_shape: Tuple[int, int] = (640, 640),
         color: Tuple[int, int, int] = (114, 114, 114),
     ) -> Tuple[np.ndarray, float, Tuple[int, int]]:
-        shape = img.shape[:2]
-        r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
-        new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
-        dw = (new_shape[1] - new_unpad[0]) / 2
-        dh = (new_shape[0] - new_unpad[1]) / 2
-
-        if shape[::-1] != new_unpad:
-            img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-
-        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
-        padded_img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
-
-        rgb = cv2.cvtColor(padded_img, cv2.COLOR_BGR2RGB)
-        tensor = rgb.transpose((2, 0, 1)).astype(np.float32) / 255.0
-        blob = np.ascontiguousarray(np.expand_dims(tensor, axis=0))
-        return blob, r, (dw, dh)
+        return preprocess_letterbox(img, new_shape=new_shape, color=color)
 
     def _postprocess_yolov8(
         self,
