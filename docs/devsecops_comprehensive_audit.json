@@ -1,0 +1,29 @@
+{
+  "timestamp": 1789867785.366975,
+  "scan_duration_sec": 0.403,
+  "overall_status": "PASS",
+  "sast_summary": {
+    "total_findings": 0,
+    "critical": 0,
+    "high": 0,
+    "findings": []
+  },
+  "dast_results": {
+    "signature_forgery_prevented": true,
+    "privilege_escalation_prevented": true,
+    "rate_limiter_active": true,
+    "token_revocation_enforced": true
+  },
+  "sros2_pki_status": {
+    "root_ca_present": true,
+    "governance_xml_present": true,
+    "permissions_xml_present": true,
+    "all_nodes_certified": true,
+    "missing_nodes": [],
+    "total_certified_nodes": 6
+  },
+  "sbom_status": {
+    "present": true,
+    "component_count": 10
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "model_name": "AURA-Drive Flow-Matching VLA Policy",
+  "architecture": "Rectified Flow ODE Vector Field",
+  "action_horizon": 16,
+  "action_dim": 5,
+  "total_parameters": 180816,
+  "final_loss": 0.96063,
+  "sha256_checksum": "66a49317580b5715a7af47849f4b4a9b9e028826d4bd72e9c8a59ea771d56ef4",
+  "model_path": "C:\\Users\\Zeenat\\Desktop\\ros2-edge-perception\\models\\flow_matching_policy.npz",
+  "timestamp": "2026-09-20T01:40:17Z",
+  "status": "VALIDATED"
+}

@@ -1,0 +1,192 @@
+<?xml version="1.0"?>
+<!-- ======================================================================= -->
+<!-- AURA-DRIVE™ 2026: INDUSTRIAL AUTONOMOUS MOBILE ROBOT (AMR) URDF/XACRO  -->
+<!-- ======================================================================= -->
+<!-- Standards Compliance: ISO 3691-4 (Safety of Industrial Trucks)          -->
+<!-- Kinematics: Differential Drive with Dual Passive Swivel Casters         -->
+<!-- Sensor Architecture: 3D LiDAR (360 deg) + Front RGB-D Depth Camera      -->
+<!-- ======================================================================= -->
+<robot name="aura_amr" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ======================== PROPERTIES =============================== -->
+  <xacro:property name="chassis_length" value="0.80"/>
+  <xacro:property name="chassis_width"  value="0.60"/>
+  <xacro:property name="chassis_height" value="0.30"/>
+  <xacro:property name="chassis_mass"   value="45.0"/>
+
+  <xacro:property name="wheel_radius"   value="0.10"/>
+  <xacro:property name="wheel_width"    value="0.05"/>
+  <xacro:property name="wheel_separation" value="0.55"/>
+  <xacro:property name="wheel_mass"     value="3.5"/>
+
+  <xacro:property name="caster_radius"  value="0.05"/>
+  <xacro:property name="caster_mass"    value="1.2"/>
+
+  <!-- ======================== BASE FOOTPRINT =========================== -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <origin xyz="0 0 ${wheel_radius}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ======================== BASE LINK (CHASSIS) ====================== -->
+  <link name="base_link">
+    <inertial>
+      <mass value="${chassis_mass}"/>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <inertia ixx="${(1/12) * chassis_mass * (chassis_width*chassis_width + chassis_height*chassis_height)}"
+               ixy="0.0" ixz="0.0"
+               iyy="${(1/12) * chassis_mass * (chassis_length*chassis_length + chassis_height*chassis_height)}"
+               iyz="0.0"
+               izz="${(1/12) * chassis_mass * (chassis_length*chassis_length + chassis_width*chassis_width)}"/>
+    </inertial>
+
+    <visual>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+      <material name="industrial_blue">
+        <color rgba="0.10 0.16 0.24 1.0"/>
+      </material>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 ${chassis_height/2}" rpy="0 0 0"/>
+      <geometry>
+        <box size="${chassis_length} ${chassis_width} ${chassis_height}"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <!-- ======================== DRIVE WHEELS ============================= -->
+  <xacro:macro name="drive_wheel" params="prefix side_y">
+    <link name="${prefix}_wheel_link">
+      <inertial>
+        <mass value="${wheel_mass}"/>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <inertia ixx="${(1/12)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"
+                 ixy="0.0" ixz="0.0"
+                 iyy="${(1/12)*wheel_mass*(3*wheel_radius*wheel_radius + wheel_width*wheel_width)}"
+                 iyz="0.0"
+                 izz="${0.5*wheel_mass*wheel_radius*wheel_radius}"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+        <material name="tire_rubber">
+          <color rgba="0.05 0.05 0.05 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_width}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${prefix}_wheel_link"/>
+      <origin xyz="0 ${side_y * wheel_separation / 2} 0" rpy="0 0 0"/>
+      <axis xyz="0 1 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:drive_wheel prefix="left" side_y="1"/>
+  <xacro:drive_wheel prefix="right" side_y="-1"/>
+
+  <!-- ======================== CASTER WHEELS ============================ -->
+  <xacro:macro name="caster_wheel" params="prefix offset_x">
+    <link name="${prefix}_caster_link">
+      <inertial>
+        <mass value="${caster_mass}"/>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <inertia ixx="${0.4*caster_mass*caster_radius*caster_radius}" ixy="0" ixz="0"
+                 iyy="${0.4*caster_mass*caster_radius*caster_radius}" iyz="0"
+                 izz="${0.4*caster_mass*caster_radius*caster_radius}"/>
+      </inertial>
+      <visual>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+        <material name="caster_metal">
+          <color rgba="0.75 0.75 0.80 1.0"/>
+        </material>
+      </visual>
+      <collision>
+        <geometry>
+          <sphere radius="${caster_radius}"/>
+        </geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}_caster_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="${prefix}_caster_link"/>
+      <origin xyz="${offset_x} 0 ${-wheel_radius + caster_radius}" rpy="0 0 0"/>
+    </joint>
+  </xacro:macro>
+
+  <xacro:caster_wheel prefix="front" offset_x="0.30"/>
+  <xacro:caster_wheel prefix="rear"  offset_x="-0.30"/>
+
+  <!-- ======================== 3D LIDAR SENSOR ========================== -->
+  <link name="laser_link">
+    <visual>
+      <geometry>
+        <cylinder radius="0.05" length="0.07"/>
+      </geometry>
+      <material name="lidar_black">
+        <color rgba="0.02 0.02 0.02 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder radius="0.05" length="0.07"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="laser_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="laser_link"/>
+    <origin xyz="0.25 0.0 ${chassis_height + 0.035}" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ======================== RGB-D CAMERA ============================= -->
+  <link name="camera_link">
+    <visual>
+      <geometry>
+        <box size="0.03 0.12 0.03"/>
+      </geometry>
+      <material name="camera_gray">
+        <color rgba="0.30 0.30 0.35 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.03 0.12 0.03"/>
+      </geometry>
+    </collision>
+  </link>
+
+  <joint name="camera_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="camera_link"/>
+    <origin xyz="${chassis_length/2} 0.0 0.18" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_optical_frame"/>
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_frame"/>
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+</robot>

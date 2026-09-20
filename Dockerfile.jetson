@@ -1,0 +1,76 @@
+# =============================================================================
+# AURA-DRIVE 2026: NVIDIA JETSON AGX ORIN / THOR PRODUCTION DOCKERFILE
+# =============================================================================
+# Certified for JetPack 6.0 (L4T r36.2.0) / Ubuntu 22.04 LTS / ROS 2 Humble
+# Optimized for 25W - 45W AMR Embedded Power Budget & <2.0 GB Memory Footprint
+# =============================================================================
+
+FROM nvcr.io/nvidia/l4t-jetpack:r36.2.0
+
+LABEL maintainer="AURA-Drive Engineering Team"
+LABEL version="2026.1.0"
+LABEL description="AURA-Drive Autonomous Mobile Robot Edge Perception & VLA Stack for Jetson AGX Orin"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV ROS_DISTRO=humble
+ENV LANG=en_US.UTF-8
+ENV PYTHONUNBUFFERED=1
+
+# 1. System Dependencies & Locale
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    locales \
+    curl \
+    gnupg2 \
+    lsb-release \
+    build-essential \
+    cmake \
+    git \
+    python3-pip \
+    python3-dev \
+    libopencv-dev \
+    python3-opencv \
+    && locale-gen en_US en_US.UTF-8 \
+    && update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. ROS 2 Humble Repositories & Base Installation
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-ros-base \
+    ros-humble-cv-bridge \
+    ros-humble-image-transport \
+    ros-humble-nav2-msgs \
+    python3-colcon-common-extensions \
+    && rm -rf /var/lib/apt/lists/*
+
+# 3. Optimized Python Runtime Dependencies
+WORKDIR /opt/aura_drive
+
+COPY config/ ./config/
+COPY launch/ ./launch/
+COPY ros2_edge_perception/ ./ros2_edge_perception/
+COPY package.xml CMakeLists.txt setup.py setup.cfg ./
+
+RUN pip3 install --no-cache-dir \
+    numpy>=1.24.0 \
+    scipy>=1.10.0 \
+    psutil>=5.9.0 \
+    fastapi>=0.100.0 \
+    uvicorn>=0.23.0 \
+    pydantic>=2.0.0 \
+    pytest>=7.0.0
+
+# 4. Build ROS 2 Colcon Workspace
+SHELL ["/bin/bash", "-c"]
+RUN source /opt/ros/humble/setup.bash \
+    && colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
+
+# 5. Environment & Entrypoint
+EXPOSE 8080 8765
+
+HEALTHCHECK --interval=15s --timeout=3s --retries=3 \
+    CMD curl -f http://localhost:8080/healthz || exit 1
+
+ENTRYPOINT ["/bin/bash", "-c", "source /opt/ros/humble/setup.bash && source /opt/aura_drive/install/setup.bash && python3 -m ros2_edge_perception.wms_rest_gateway & ros2 launch ros2_edge_perception aura_edge_perception.launch.py"]
+

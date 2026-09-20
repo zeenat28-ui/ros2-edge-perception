@@ -1,0 +1,52 @@
+<!-- ==============================================================================
+     AURA-DRIVE™ PRODUCTION NAV2 BEHAVIOR TREE (ISO 3691-4 COMPLIANT)
+     ==============================================================================
+     Deterministic hierarchical autonomy tree featuring:
+     1. Rate-controlled global path replanning (10 Hz).
+     2. Continuous Neural SDF Costmap & Dynamic Obstacle Evasion.
+     3. 4-Tier Recovery Subtree: Clear Entire Costmap -> In-Place Spin -> Wait -> E-Stop.
+     ============================================================================== -->
+<root main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <RecoveryNode number_of_retries="3" name="NavigateRecovery">
+      
+      <!-- Primary Autonomous Navigation Loop -->
+      <PipelineSequence name="NavigateWithReplanning">
+        
+        <!-- Rate-Limited Global Replanning (10 Hz) -->
+        <RateController hz="10.0">
+          <RecoveryNode number_of_retries="1" name="ComputePathRecovery">
+            <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </RecoveryNode>
+        </RateController>
+
+        <!-- Dynamic Path Follower with MPPI & Neural SDF Avoidance -->
+        <RecoveryNode number_of_retries="1" name="FollowPathRecovery">
+          <FollowPath path="{path}" controller_id="FollowPath"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+        </RecoveryNode>
+
+      </PipelineSequence>
+
+      <!-- Tiered Recovery Subtree on Failure -->
+      <Sequence name="TieredRecoverySequence">
+        
+        <!-- Step 1: Clear local and global costmaps -->
+        <ClearEntireCostmap name="ClearCostmapRecovery" service_name="local_costmap/clear_entirely_local_costmap"/>
+        
+        <!-- Step 2: Safe in-place spin to re-localize with Floor Tags & LiDAR (0.25 rad/s) -->
+        <Spin spin_dist="1.57" time_allowance="5.0"/>
+        
+        <!-- Step 3: Brief wait for transient obstacles to clear (e.g. crossing personnel) -->
+        <Wait wait_duration="2.0"/>
+        
+        <!-- Step 4: Controlled safe deceleration back to safe state -->
+        <BackUp backup_dist="0.30" backup_speed="0.10" time_allowance="3.0"/>
+
+      </Sequence>
+
+    </RecoveryNode>
+  </BehaviorTree>
+</root>
+

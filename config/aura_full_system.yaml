@@ -1,0 +1,152 @@
+# ==============================================================================
+# AURA-Drive™ Industrial Autonomous Mobile Robot - Master System Configuration
+# Standards: ISO 3691-4 (Industrial Trucks), ISO 26262 (ASIL-D), VDA 5050 v2.1.0
+# Hardware: AMD Ryzen™ AI / NVIDIA Jetson Orin / Industrial IPC
+# ==============================================================================
+
+system:
+  robot_id: "AURA-AMR-001"
+  fleet_id: "ZONE_A_WAREHOUSE_CENTRAL"
+  environment: "production"
+  log_level: "INFO"
+
+# ------------------------------------------------------------------------------
+# Subsystem 1: Real-Time Perception & Object Tracking
+# ------------------------------------------------------------------------------
+perception:
+  camera:
+    width: 640
+    height: 480
+    fps: 30
+    fov_deg: 87.0
+    optical_frame: "camera_optical_frame"
+  detector:
+    model_path: "models/yolov8n.onnx"
+    confidence_threshold: 0.45
+    iou_threshold: 0.50
+    backend: "ONNX_RUNTIME_CUDA"
+  tracker:
+    algorithm: "ByteTrack"
+    track_thresh: 0.5
+    match_thresh: 0.8
+    track_buffer: 30
+
+# ------------------------------------------------------------------------------
+# Subsystem 2: Diffusion VLA Foundation Policy (Flow-Matching ODE)
+# ------------------------------------------------------------------------------
+diffusion_vla_policy:
+  architecture: "FlowMatchingDiffusionPolicy"
+  action_horizon: 16
+  action_dim: 2  # [v_linear, w_angular]
+  denoising_steps: 16
+  ode_solver: "Euler"
+  feature_dim: 128
+  guidance_weight: 1.5
+  temperature: 0.2
+  inference_device: "cuda:0"
+  max_linear_velocity: 1.5   # m/s
+  max_angular_velocity: 1.2  # rad/s
+
+# ------------------------------------------------------------------------------
+# Subsystem 3: Continuous Neural Signed Distance Field (SDF)
+# ------------------------------------------------------------------------------
+neural_sdf:
+  fourier_bands: 6
+  input_dim: 39  # 3 coords + 36 Fourier features (2 * 3 * 6)
+  hidden_layers: [64, 64, 64]
+  activation: "SiLU"
+  gradient_mode: "ANALYTICAL_EIKONAL"
+  eikonal_target_norm: 1.0
+  surface_epsilon: 0.005  # 5mm sub-millimeter boundary precision
+  bounds:
+    x_range: [-3.0, 3.0]
+    y_range: [-3.0, 3.0]
+    z_range: [0.0, 2.0]
+
+# ------------------------------------------------------------------------------
+# Subsystem 4: GPU-Accelerated MPPI Trajectory Optimizer
+# ------------------------------------------------------------------------------
+mppi_optimizer:
+  num_samples: 10000
+  time_horizon_steps: 30
+  dt: 0.05
+  temperature_lambda: 0.25
+  gamma_exploration: 0.015
+  centripetal_accel_limit: 1.8  # m/s^2 (ISO 3691-4 tip-over prevention)
+  cost_weights:
+    sdf_repulsion: 12.0
+    goal_tracking: 6.0
+    path_alignment: 8.0
+    smoothness_jerk: 4.0
+    velocity_preference: 3.5
+
+# ------------------------------------------------------------------------------
+# Subsystem 5: VDA 5050 v2.1.0 Fleet Management Connector
+# ------------------------------------------------------------------------------
+vda5050:
+  version: "2.1.0"
+  broker_host: "127.0.0.1"
+  broker_port: 8883
+  use_tls: true
+  client_id: "aura_amr_001_vda5050"
+  topic_prefix: "uagv/v2/AURA_FLEET/AURA-AMR-001"
+  state_publish_interval_ms: 1000
+  node_tolerance_xy_m: 0.10
+  node_tolerance_theta_rad: 0.08
+
+# ------------------------------------------------------------------------------
+# Subsystem 6: ISO 26262 ASIL-D & ISO 3691-4 Safety Watchdog
+# ------------------------------------------------------------------------------
+safety_watchdog:
+  heartbeat_timeout_ms: 150.0
+  max_allowed_jitter_ms: 45.0
+  interlock_cat: "CAT_3_PL_D"
+  supervised_nodes:
+    - name: "perception_engine"
+      target_hz: 15.0
+      critical: true
+    - name: "diffusion_vla_policy"
+      target_hz: 10.0
+      critical: true
+    - name: "cuda_mppi_optimizer"
+      target_hz: 20.0
+      critical: true
+    - name: "amcl_localization"
+      target_hz: 20.0
+      critical: true
+    - name: "vda5050_connector"
+      target_hz: 2.0
+      critical: false
+
+# ------------------------------------------------------------------------------
+# Subsystem 7: DevSecOps Cryptographic Security & RBAC
+# ------------------------------------------------------------------------------
+security:
+  token_algorithm: "HS256"
+  token_validity_seconds: 3600
+  rate_limit_requests_per_sec: 50
+  rate_limit_burst_capacity: 100
+  constant_time_comparison: true
+  allowed_roles:
+    - "FLEET_DISPATCHER"
+    - "SAFETY_OFFICER"
+    - "MAINTENANCE_TECH"
+    - "MONITORING_CLIENT"
+
+# ------------------------------------------------------------------------------
+# Subsystem 8: MLOps Data Drift Detection & Model Validation Gate
+# ------------------------------------------------------------------------------
+mlops:
+  drift_detection:
+    evaluation_window_size: 100
+    ks_test_alpha: 0.05
+    wasserstein_drift_threshold: 0.15
+    monitored_modalities:
+      - "luminance_distribution"
+      - "depth_variance"
+      - "pointcloud_density"
+  validation_gate:
+    max_ade_meters: 0.05
+    max_fde_meters: 0.10
+    max_kinematic_jerk: 10.0
+    require_zero_cve: true

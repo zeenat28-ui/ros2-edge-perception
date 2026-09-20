@@ -1,0 +1,48 @@
+{
+  "timestamp": "2026-09-20T10:35:20Z",
+  "target_hardware": "Edge IPC / Jetson Orin / AMD Ryzen AI NPU",
+  "diffusion_vla_policy_benchmark": {
+    "mean_ms": 32.988,
+    "std_ms": 12.946,
+    "p50_ms": 32.666,
+    "p95_ms": 51.827,
+    "p99_ms": 79.83,
+    "min_ms": 18.028,
+    "max_ms": 95.226
+  },
+  "neural_sdf_benchmark": {
+    "mean_ms": 0.635,
+    "std_ms": 0.286,
+    "p50_ms": 0.527,
+    "p95_ms": 1.124,
+    "p99_ms": 1.79,
+    "min_ms": 0.516,
+    "max_ms": 2.276
+  },
+  "quantization_analysis": {
+    "total_active_parameters": 33344,
+    "precision_comparison": {
+      "FP32": {
+        "memory_kb": 130.25,
+        "compression_ratio": "1.0x",
+        "estimated_speedup": "1.0x"
+      },
+      "FP16": {
+        "memory_kb": 65.12,
+        "compression_ratio": "2.0x",
+        "estimated_speedup": "1.75x"
+      },
+      "INT8": {
+        "memory_kb": 32.56,
+        "compression_ratio": "4.0x",
+        "estimated_speedup": "2.80x"
+      }
+    }
+  },
+  "summary": {
+    "p50_ms": 33.19,
+    "p95_ms": 52.95,
+    "total_cycle_p99_ms": 81.62,
+    "meets_realtime_budget": true
+  }
+}

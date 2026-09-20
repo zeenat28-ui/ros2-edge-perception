@@ -1,0 +1,149 @@
+name: Enterprise DevSecOps & MLOps Automated CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, master, release/* ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  # ============================================================================
+  # Stage 1: Static Code Quality & Formatting
+  # ============================================================================
+  lint-and-syntax:
+    name: "Stage 1: Lint & Code Standards"
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Linting Tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black
+
+      - name: Execute Black Syntax Formatting Check
+        run: |
+          black --check --line-length 120 ros2_edge_perception/ scripts/ tests/ || true
+
+      - name: Execute Flake8 Linting
+        run: |
+          flake8 ros2_edge_perception/ --count --select=E9,F63,F7,F82 --show-source --statistics
+
+  # ============================================================================
+  # Stage 2: DevSecOps Static Security & ISO 21434 Audit
+  # ============================================================================
+  devsecops-security-audit:
+    name: "Stage 2: DevSecOps & ISO 21434 Audit"
+    runs-on: ubuntu-22.04
+    needs: [lint-and-syntax]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Run AST Vulnerability & Secret Audit
+        run: |
+          python scripts/devsecops_audit.py
+
+      - name: Upload Security Audit Report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: devsecops-security-report
+          path: docs/devsecops_audit_report.json
+
+  # ============================================================================
+  # Stage 3: MLOps Model Validation Gate (ADE / FDE / Jerk)
+  # ============================================================================
+  mlops-model-validation-gate:
+    name: "Stage 3: MLOps Model Gate"
+    runs-on: ubuntu-22.04
+    needs: [lint-and-syntax]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Runtime Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy scipy
+
+      - name: Execute Physical AI Validation Gate
+        run: |
+          python scripts/mlops_validation_gate.py
+
+      - name: Execute Model Quantization & Latency Profiler
+        run: |
+          python scripts/mlops_model_optimizer.py
+
+      - name: Upload MLOps Validation Artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: mlops-validation-reports
+          path: |
+            docs/mlops_gate_report.json
+            docs/mlops_optimization_report.json
+
+  # ============================================================================
+  # Stage 4: Automated Functional & Safety Test Suite
+  # ============================================================================
+  functional-and-safety-tests:
+    name: "Stage 4: Automated Safety Test Suite"
+    runs-on: ubuntu-22.04
+    needs: [devsecops-security-audit, mlops-model-validation-gate]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install Full Test Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy scipy fastapi uvicorn pydantic psutil pytest httpx pyyaml
+
+      - name: Run Pytest Comprehensive Regression Suite
+        run: |
+          python -m pytest tests/ -v
+
+  # ============================================================================
+  # Stage 5: Hardened Rootless Container Build
+  # ============================================================================
+  build-hardened-container:
+    name: "Stage 5: Hardened Container Build"
+    runs-on: ubuntu-22.04
+    needs: [functional-and-safety-tests]
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Build Hardened Container Image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile.hardened
+          push: false
+          tags: aura-drive/edge-amr:latest-hardened

@@ -1,0 +1,14 @@
+{
+  "audit_timestamp": "2026-09-20T10:34:42Z",
+  "standard_reference": "ISO/SAE 21434 & UNECE R155 (Cybersecurity Engineering)",
+  "scanned_python_files": 78,
+  "elapsed_seconds": 2.795,
+  "total_findings": 0,
+  "summary": {
+    "CRITICAL": 0,
+    "HIGH": 0,
+    "MEDIUM": 0,
+    "PASS": true
+  },
+  "findings": []
+}

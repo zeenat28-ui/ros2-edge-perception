@@ -1,0 +1,53 @@
+# ==============================================================================
+# Enterprise Configuration: ROS 2 Edge Perception & 3D Spatial Pipeline
+# ==============================================================================
+
+perception_node:
+  ros__parameters:
+    # Inference Accelerator: 'cpu', 'rocm' (AMD GPU), 'cuda' (NVIDIA GPU), 'migraphx'
+    device: "cpu"
+    model_path: "models/yolov8n.onnx"
+
+    # Input Tensor Dimensions
+    input_width: 640
+    input_height: 640
+
+    # Detection Thresholds (Dynamically Reconfigurable at Runtime)
+    conf_threshold: 0.35
+    iou_threshold: 0.45
+
+    # 2D Topics
+    image_topic: "/camera/image_raw"
+    detections_topic: "/perception/detections"
+    annotated_topic: "/perception/annotated_image"
+    publish_annotated_image: true
+
+    # 3D Spatial Projection & Depth Fusion (Tier-1 Robotics)
+    enable_3d_projection: true
+    depth_topic: "/camera/depth/image_raw"
+    camera_info_topic: "/camera/camera_info"
+    detections_3d_topic: "/perception/detections_3d"
+    min_depth_meters: 0.2
+    max_depth_meters: 10.0
+
+    # Observability & Telemetry
+    enable_diagnostics: true
+    diagnostics_topic: "/perception/diagnostics"
+
+camera_streamer_node:
+  ros__parameters:
+    # Camera Source: 'synthetic', 'usb', 'video'
+    source_type: "synthetic"
+    video_source: "0"
+
+    # Stream Parameters
+    width: 640
+    height: 480
+    fps: 30.0
+    frame_id: "camera_optical_frame"
+
+    # Published Topics
+    image_topic: "/camera/image_raw"
+    depth_topic: "/camera/depth/image_raw"
+    camera_info_topic: "/camera/camera_info"
+    publish_synthetic_depth: true

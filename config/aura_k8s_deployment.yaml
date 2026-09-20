@@ -1,0 +1,106 @@
+# ==============================================================================
+# AURA-DRIVE™ 2026: HARDENED KUBERNETES / K3S EDGE DEPLOYMENT MANIFEST
+# ==============================================================================
+# Compliance: CIS Benchmark, Kubernetes Pod Security Standard "restricted"
+# Features:
+# 1. Non-root unprivileged container execution (UID 10001)
+# 2. Read-only root filesystem with isolated tmpfs volume mounts
+# 3. Complete capability drop (CAP_DROP_ALL) preventing privilege escalation
+# 4. Strict resource quotas and liveness/readiness health probes
+# ==============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: aura-drive-autonomy-edge
+  namespace: aura-robotics
+  labels:
+    app.kubernetes.io/name: aura-drive
+    app.kubernetes.io/component: physical-ai-core
+    app.kubernetes.io/part-of: aura-fleet
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: aura-drive-edge
+  template:
+    metadata:
+      labels:
+        app: aura-drive-edge
+      annotations:
+        container.apparmor.security.beta.kubernetes.io/aura-core: "localhost/aura-drive-hardened"
+        seccomp.security.alpha.kubernetes.io/pod: "localhost/aura_seccomp_profile.json"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: Localhost
+          localhostProfile: aura_seccomp_profile.json
+        appArmorProfile:
+          type: Localhost
+          localhostProfile: aura-drive-hardened
+      containers:
+        - name: aura-core
+          image: aura-drive/physical-ai:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: "1500m"
+              memory: "2048Mi"
+            limits:
+              cpu: "4000m"
+              memory: "4096Mi"
+          env:
+            - name: ROS_DOMAIN_ID
+              value: "42"
+            - name: ROS_SECURITY_ENABLE
+              value: "true"
+            - name: ROS_SECURITY_STRATEGY
+              value: "Enforce"
+            - name: ROS_SECURITY_KEYSTORE
+              value: "/etc/sros2/keystore"
+          volumeMounts:
+            - name: tmp-dir
+              mountPath: /tmp
+            - name: sros2-keystore
+              mountPath: /etc/sros2/keystore
+              readOnly: true
+            - name: model-weights
+              mountPath: /app/models
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 5
+      volumes:
+        - name: tmp-dir
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: sros2-keystore
+          secret:
+            secretName: aura-sros2-keystore
+        - name: model-weights
+          configMap:
+            name: aura-model-weights
+

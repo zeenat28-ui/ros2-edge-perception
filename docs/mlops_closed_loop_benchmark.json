@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-09-20T10:54:02Z",
+  "total_scenarios": 5,
+  "success_rate_percent": 100.0,
+  "mean_path_length_efficiency": 0.79,
+  "mean_kinematic_jerk": 56.123,
+  "mean_time_between_interventions_cycles": 100.0,
+  "scenario_details": [
+    {
+      "scenario_id": "SC-01",
+      "name": "Crossing Forklift Evasion",
+      "success": true,
+      "collided": false,
+      "final_distance_to_goal_m": 0.936,
+      "path_length_m": 4.534,
+      "path_length_efficiency": 0.551,
+      "mean_jerk": 51.525
+    },
+    {
+      "scenario_id": "SC-02",
+      "name": "Loose Floor Cable Bypass",
+      "success": true,
+      "collided": false,
+      "final_distance_to_goal_m": 0.928,
+      "path_length_m": 5.023,
+      "path_length_efficiency": 0.398,
+      "mean_jerk": 58.959
+    },
+    {
+      "scenario_id": "SC-03",
+      "name": "Loading Dock Cliff Safe Halt",
+      "success": true,
+      "collided": false,
+      "final_distance_to_goal_m": 1.5,
+      "path_length_m": 0.0,
+      "path_length_efficiency": 1.0,
+      "mean_jerk": 65.51
+    },
+    {
+      "scenario_id": "SC-04",
+      "name": "Pallet Station Precision Docking",
+      "success": true,
+      "collided": false,
+      "final_distance_to_goal_m": 0.538,
+      "path_length_m": 1.472,
+      "path_length_efficiency": 1.0,
+      "mean_jerk": 51.691
+    },
+    {
+      "scenario_id": "SC-05",
+      "name": "Narrow Aisle Nominal Traversal",
+      "success": true,
+      "collided": false,
+      "final_distance_to_goal_m": 0.599,
+      "path_length_m": 2.603,
+      "path_length_efficiency": 1.0,
+      "mean_jerk": 52.929
+    }
+  ],
+  "status": "APPROVED"
+}

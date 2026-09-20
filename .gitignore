@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ROS 2 Colcon
+install/
+log/
+
+# Test & Cache
+.pytest_cache/
+.env
+frame_analysis/
+real_highway_drive.mp4
+
+# Models (ignore large checkpoints, but keep download script and classes)
+models/**/*.onnx
+models/*.onnx
+models/**/*.pt
+models/*.pt
+models/huggingface/yolov8n/.cache/
+models/huggingface/yolov8n/yolov8n-onnx-web/
+!models/download_model.py
+!models/coco_classes.py
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*~
+

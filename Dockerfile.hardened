@@ -1,0 +1,92 @@
+# ==============================================================================
+# AURA-Drive™ Enterprise Hardened Multi-Stage Container
+# Security Standard: ISO 21434, CIS Docker Benchmark, NIST SP 800-190
+# Principles: Rootless (UID 10001), Read-Only RootFS, No SUID/SGID, Minimal Attack Surface
+# ==============================================================================
+
+# Stage 1: Build & Dependency Resolution Stage
+FROM ros:humble-ros-base-jammy AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-pip \
+    python3-venv \
+    build-essential \
+    cmake \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create virtual environment for isolated dependencies
+RUN python3 -m venv /opt/aura_venv
+ENV PATH="/opt/aura_venv/bin:$PATH"
+
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN pip install --no-cache-dir \
+    numpy \
+    scipy \
+    fastapi \
+    uvicorn \
+    pydantic \
+    psutil \
+    pytest \
+    httpx \
+    pyyaml
+
+# Stage 2: Hardened Runtime Container
+FROM ros:humble-ros-base-jammy AS runtime
+
+LABEL maintainer="AURA-Drive Engineering Team <engineering@aura-drive.ai>"
+LABEL security.standard="ISO-21434"
+LABEL container.type="unprivileged-rootless"
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PATH="/opt/aura_venv/bin:$PATH"
+ENV AURA_ENVIRONMENT="production"
+
+# Install minimal required shared libraries
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && find / -xdev -perm -4000 -exec chmod -s {} + 2>/dev/null || true \
+    && find / -xdev -perm -2000 -exec chmod -s {} + 2>/dev/null || true
+
+# Copy virtual environment from builder
+COPY --from=builder /opt/aura_venv /opt/aura_venv
+
+# Create unprivileged user (UID 10001) with no shell access
+RUN groupadd -g 10001 aura_group && \
+    useradd -u 10001 -g aura_group -s /sbin/nologin -M -d /opt/aura aura_user
+
+# Setup application directory structure
+WORKDIR /opt/aura
+COPY --chown=aura_user:aura_group config /opt/aura/config
+COPY --chown=aura_user:aura_group ros2_edge_perception /opt/aura/ros2_edge_perception
+COPY --chown=aura_user:aura_group urdf /opt/aura/urdf
+COPY --chown=aura_user:aura_group run_aura_system.py /opt/aura/run_aura_system.py
+COPY --chown=aura_user:aura_group package.xml /opt/aura/package.xml
+
+# Set strict read-only permissions for application files
+RUN chmod -R 550 /opt/aura && \
+    mkdir -p /opt/aura/logs /opt/aura/tmp && \
+    chown -R aura_user:aura_group /opt/aura/logs /opt/aura/tmp && \
+    chmod -R 770 /opt/aura/logs /opt/aura/tmp
+
+# Drop root privileges permanently
+USER 10001:10001
+
+# Expose VDA 5050 and telemetry visualization ports
+EXPOSE 8080 8883
+
+# Healthcheck for orchestration
+HEALTHCHECK --interval=15s --timeout=3s --start-period=5s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health').read()" || exit 1
+
+# Execute master system runner
+ENTRYPOINT ["python3", "/opt/aura/run_aura_system.py"]

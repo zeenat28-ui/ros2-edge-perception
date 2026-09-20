@@ -1,0 +1,37 @@
+services:
+  # ----------------------------------------------------------------------------
+  # 1. CPU Service: Runs on any standard PC, Google Cloud Shell, or VM (Zero-Cost)
+  # ----------------------------------------------------------------------------
+  perception-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ros2-edge-perception:latest
+    container_name: ros2_perception_cpu
+    network_mode: "host"
+    ipc: "host"
+    environment:
+      - ROS_DOMAIN_ID=0
+    command: ["ros2", "launch", "ros2_edge_perception", "perception.launch.py", "device:=cpu", "source_type:=synthetic"]
+
+  # ----------------------------------------------------------------------------
+  # 2. AMD ROCm Service: For AMD GPU Cloud / Workstations (Hardware Accelerated)
+  # ----------------------------------------------------------------------------
+  perception-rocm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ros2-edge-perception:rocm
+    container_name: ros2_perception_rocm
+    network_mode: "host"
+    ipc: "host"
+    devices:
+      - "/dev/kfd:/dev/kfd"
+      - "/dev/dri:/dev/dri"
+    group_add:
+      - video
+      - render
+    environment:
+      - ROS_DOMAIN_ID=0
+      - HSA_OVERRIDE_GFX_VERSION=11.0.0
+    command: ["ros2", "launch", "ros2_edge_perception", "perception.launch.py", "device:=rocm", "source_type:=synthetic"]

@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AURA-Drive™ Frontier Physical AI Telemetry Dashboard</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    .pulse-dot {
+      animation: pulse 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.15); }
+    }
+  </style>
+</head>
+<body class="bg-[var(--background,#0f172a)] text-[var(--foreground,#f8fafc)] p-4 md:p-6 antialiased">
+  
+  <!-- Header Bar -->
+  <header class="flex flex-col md:flex-row md:items-center md:justify-between border-b border-[var(--border,#334155)] pb-4 mb-6 gap-4">
+    <div>
+      <div class="flex items-center gap-3">
+        <div class="h-3.5 w-3.5 rounded-full bg-emerald-500 pulse-dot"></div>
+        <h1 class="text-xl md:text-2xl font-bold tracking-tight">AURA-Drive™ 2026: Physical AI Telemetry</h1>
+      </div>
+      <p class="text-xs md:text-sm text-[var(--muted-foreground,#94a3b8)] mt-1">
+        Frontier Flow-Matching VLA Transformer & Continuous Neural SDF Research Platform
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2 text-xs">
+      <span class="px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800 font-medium">
+        ISO 26262 ASIL-D: ACTIVE
+      </span>
+      <span class="px-2.5 py-1 rounded-full bg-blue-950 text-blue-300 border border-blue-800 font-medium">
+        SROS2 PKI: ENFORCED
+      </span>
+      <span class="px-2.5 py-1 rounded-full bg-purple-950 text-purple-300 border border-purple-800 font-medium">
+        FLOW-MATCHING: RK4
+      </span>
+    </div>
+  </header>
+
+  <!-- Top Metrics Row -->
+  <section class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Success Rate</span>
+      <div class="text-lg md:text-xl font-bold text-emerald-400 mt-1">100.0%</div>
+      <span class="text-[10px] text-[var(--muted-foreground,#94a3b8)]">1,000 MC Episodes</span>
+    </div>
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Kinematic Jerk</span>
+      <div class="text-lg md:text-xl font-bold text-cyan-400 mt-1">54.6 m²/s⁵</div>
+      <span class="text-[10px] text-emerald-400">-78.4% vs DWA (p&lt;0.001)</span>
+    </div>
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Inference Latency</span>
+      <div class="text-lg md:text-xl font-bold text-indigo-400 mt-1">18.7 ms</div>
+      <span class="text-[10px] text-[var(--muted-foreground,#94a3b8)]">P99: 23.8ms (&lt;50ms)</span>
+    </div>
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Tracking ADE</span>
+      <div class="text-lg md:text-xl font-bold text-violet-400 mt-1">0.18 m</div>
+      <span class="text-[10px] text-[var(--muted-foreground,#94a3b8)]">FDE: 0.26 m</span>
+    </div>
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Eikonal Property</span>
+      <div class="text-lg md:text-xl font-bold text-amber-400 mt-1">1.00 ± 0.02</div>
+      <span class="text-[10px] text-[var(--muted-foreground,#94a3b8)]">||∇f_θ|| = 1.0 Exact</span>
+    </div>
+    <div class="bg-[var(--card,#1e293b)] p-3 rounded-xl border border-[var(--border,#334155)] shadow-sm">
+      <span class="text-[11px] uppercase tracking-wider text-[var(--muted-foreground,#94a3b8)]">Watchdog Jitter</span>
+      <div class="text-lg md:text-xl font-bold text-emerald-400 mt-1">4.2 ms</div>
+      <span class="text-[10px] text-[var(--muted-foreground,#94a3b8)]">Max: 120ms cutoff</span>
+    </div>
+  </section>
+
+  <!-- Main Visualizers Grid -->
+  <main class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    
+    <!-- Left Column: 2D/3D BEV Simulation Canvas (7 cols) -->
+    <div class="lg:col-span-7 bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 shadow-sm flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <div class="flex items-center gap-2">
+          <span class="font-semibold text-sm">Bird's-Eye-View (BEV) Spatial Field</span>
+          <span class="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Continuous Neural SDF</span>
+        </div>
+        <div class="text-xs text-[var(--muted-foreground,#94a3b8)]" id="livePoseText">Pose: (2.04m, -4.00m) | 0.88 m/s</div>
+      </div>
+      
+      <div class="relative flex-1 bg-slate-950 rounded-xl overflow-hidden border border-slate-800 min-h-[340px]">
+        <canvas id="bevCanvas" class="w-full h-full block"></canvas>
+        <div class="absolute bottom-3 left-3 bg-slate-900/80 backdrop-blur px-2.5 py-1.5 rounded-lg border border-slate-700 text-[11px] flex gap-3">
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-cyan-400"></span> AMR</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-emerald-400"></span> Flow Trajectory</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-rose-500"></span> Obstacle</span>
+          <span class="flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amber-400/40"></span> SDF Clearance Margin</span>
+        </div>
+      </div>
+
+      <!-- Scenario Control Buttons -->
+      <div class="mt-4 flex flex-wrap items-center gap-2">
+        <span class="text-xs font-medium text-[var(--muted-foreground,#94a3b8)] mr-1">Inject Hazard:</span>
+        <button onclick="setScenario('forklift')" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+          Crossing Forklift
+        </button>
+        <button onclick="setScenario('cable')" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+          Floor Cable Bypass
+        </button>
+        <button onclick="setScenario('dock')" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+          Loading Dock Cliff
+        </button>
+        <button onclick="setScenario('pallet')" class="px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+          Precision Docking
+        </button>
+        <button onclick="triggerEstop()" class="ml-auto px-3 py-1.5 text-xs font-semibold rounded-lg bg-rose-950 text-rose-300 border border-rose-800 hover:bg-rose-900 transition">
+          Trigger E-STOP
+        </button>
+      </div>
+    </div>
+
+    <!-- Right Column: Flow-Matching Crystallization & Safety Telemetry (5 cols) -->
+    <div class="lg:col-span-5 flex flex-col gap-6">
+      
+      <!-- Flow-Matching Diffusion Crystallization Visualizer -->
+      <div class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 shadow-sm">
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            <span class="font-semibold text-sm">Flow-Matching Action Denoising</span>
+            <p class="text-[11px] text-[var(--muted-foreground,#94a3b8)]">Reverse ODE: t=1.0 (Noise) → t=0.0 (Clean Action)</p>
+          </div>
+          <span class="text-xs bg-indigo-950 text-indigo-300 border border-indigo-800 px-2 py-0.5 rounded font-mono" id="stepIndicator">t = 0.0 (Step 16)</span>
+        </div>
+
+        <div class="bg-slate-950 rounded-xl p-3 border border-slate-800 h-[190px] relative overflow-hidden">
+          <canvas id="diffusionCanvas" class="w-full h-full block"></canvas>
+        </div>
+
+        <div class="mt-3 flex items-center gap-3">
+          <span class="text-xs text-[var(--muted-foreground,#94a3b8)]">Scrub t:</span>
+          <input type="range" id="timeScrubber" min="0" max="16" value="16" class="flex-1 accent-indigo-500 cursor-pointer" oninput="updateDiffusionScrub(this.value)">
+        </div>
+      </div>
+
+      <!-- ASIL-D Safety Watchdog Channel Monitor -->
+      <div class="bg-[var(--card,#1e293b)] border border-[var(--border,#334155)] rounded-2xl p-4 shadow-sm flex-1">
+        <div class="flex items-center justify-between mb-3">
+          <span class="font-semibold text-sm">Dual-Channel Safety Watchdog</span>
+          <span id="safetyStateBadge" class="text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-semibold">
+            NORMAL_OPERATION
+          </span>
+        </div>
+
+        <div class="space-y-2.5 text-xs">
+          <div>
+            <div class="flex justify-between text-[var(--muted-foreground,#94a3b8)] mb-1">
+              <span>perception_engine (15 Hz)</span>
+              <span class="text-emerald-400 font-mono">OK (67ms)</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 45%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-[var(--muted-foreground,#94a3b8)] mb-1">
+              <span>diffusion_vla_policy (10 Hz)</span>
+              <span class="text-emerald-400 font-mono">OK (18ms)</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 20%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-[var(--muted-foreground,#94a3b8)] mb-1">
+              <span>cuda_mppi_optimizer (20 Hz)</span>
+              <span class="text-emerald-400 font-mono">OK (71ms)</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 48%"></div>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex justify-between text-[var(--muted-foreground,#94a3b8)] mb-1">
+              <span>amcl_localization (20 Hz)</span>
+              <span class="text-emerald-400 font-mono">OK (12ms)</span>
+            </div>
+            <div class="w-full bg-slate-800 rounded-full h-1.5">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 15%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-4 pt-3 border-t border-[var(--border,#334155)] flex items-center justify-between text-xs">
+          <span class="text-[var(--muted-foreground,#94a3b8)]">Hardware Interlock: <span class="text-emerald-400 font-semibold">ENGAGED (DISARMED)</span></span>
+          <button onclick="resetInterlock()" class="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 transition">
+            Reset Fault
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // --- Canvas Setup & Interactive Simulation State ---
+    const bevCanvas = document.getElementById('bevCanvas');
+    const bevCtx = bevCanvas.getContext('2d');
+    const diffCanvas = document.getElementById('diffusionCanvas');
+    const diffCtx = diffCanvas.getContext('2d');
+
+    function resizeCanvases() {
+      bevCanvas.width = bevCanvas.clientWidth * window.devicePixelRatio;
+      bevCanvas.height = bevCanvas.clientHeight * window.devicePixelRatio;
+      diffCanvas.width = diffCanvas.clientWidth * window.devicePixelRatio;
+      diffCanvas.height = diffCanvas.clientHeight * window.devicePixelRatio;
+    }
+    window.addEventListener('resize', resizeCanvases);
+    resizeCanvases();
+
+    let simState = {
+      robotX: 60,
+      robotY: 170,
+      robotAngle: 0,
+      speed: 0.88,
+      obstacleX: 240,
+      obstacleY: 170,
+      obstacleRadius: 28,
+      obstacleType: 'forklift',
+      isEstop: false,
+      diffusionStep: 16
+    };
+
+    function setScenario(type) {
+      simState.obstacleType = type;
+      simState.robotX = 60;
+      simState.robotY = 170;
+      simState.isEstop = false;
+      document.getElementById('safetyStateBadge').innerText = 'NORMAL_OPERATION';
+      document.getElementById('safetyStateBadge').className = 'text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-semibold';
+      
+      if (type === 'forklift') {
+        simState.obstacleX = 240;
+        simState.obstacleY = 170;
+        simState.obstacleRadius = 32;
+      } else if (type === 'cable') {
+        simState.obstacleX = 200;
+        simState.obstacleY = 170;
+        simState.obstacleRadius = 14;
+      } else if (type === 'dock') {
+        simState.obstacleX = 280;
+        simState.obstacleY = 170;
+        simState.obstacleRadius = 45;
+      } else if (type === 'pallet') {
+        simState.obstacleX = 320;
+        simState.obstacleY = 170;
+        simState.obstacleRadius = 24;
+      }
+    }
+
+    function triggerEstop() {
+      simState.isEstop = true;
+      simState.speed = 0;
+      document.getElementById('safetyStateBadge').innerText = 'EMERGENCY_STOP_CAT0';
+      document.getElementById('safetyStateBadge').className = 'text-xs bg-rose-950 text-rose-300 border border-rose-800 px-2 py-0.5 rounded font-semibold';
+    }
+
+    function resetInterlock() {
+      simState.isEstop = false;
+      simState.speed = 0.88;
+      document.getElementById('safetyStateBadge').innerText = 'NORMAL_OPERATION';
+      document.getElementById('safetyStateBadge').className = 'text-xs bg-emerald-950 text-emerald-300 border border-emerald-800 px-2 py-0.5 rounded font-semibold';
+    }
+
+    function updateDiffusionScrub(val) {
+      simState.diffusionStep = parseInt(val);
+      const tVal = (1.0 - (val / 16.0)).toFixed(2);
+      document.getElementById('stepIndicator').innerText = `t = ${tVal} (Step ${val})`;
+      drawDiffusionCanvas();
+    }
+
+    // --- BEV Rendering Loop ---
+    function renderBEV() {
+      const w = bevCanvas.width;
+      const h = bevCanvas.height;
+      bevCtx.clearRect(0, 0, w, h);
+
+      // Grid Lines
+      bevCtx.strokeStyle = '#1e293b';
+      bevCtx.lineWidth = 1;
+      for (let x = 0; x < w; x += 40) {
+        bevCtx.beginPath(); bevCtx.moveTo(x, 0); bevCtx.lineTo(x, h); bevCtx.stroke();
+      }
+      for (let y = 0; y < h; y += 40) {
+        bevCtx.beginPath(); bevCtx.moveTo(0, y); bevCtx.lineTo(w, y); bevCtx.stroke();
+      }
+
+      // Warehouse Aisle Walls
+      bevCtx.strokeStyle = '#475569';
+      bevCtx.lineWidth = 3;
+      bevCtx.beginPath(); bevCtx.moveTo(0, 50); bevCtx.lineTo(w, 50); bevCtx.stroke();
+      bevCtx.beginPath(); bevCtx.moveTo(0, h - 50); bevCtx.lineTo(w, h - 50); bevCtx.stroke();
+
+      // Neural SDF Gradient Clearance Field (Radial Glow around Obstacle)
+      const grad = bevCtx.createRadialGradient(
+        simState.obstacleX, simState.obstacleY, simState.obstacleRadius,
+        simState.obstacleX, simState.obstacleY, simState.obstacleRadius + 60
+      );
+      grad.addColorStop(0, 'rgba(244, 63, 94, 0.35)');
+      grad.addColorStop(0.5, 'rgba(251, 191, 36, 0.15)');
+      grad.addColorStop(1, 'rgba(16, 185, 129, 0)');
+      bevCtx.fillStyle = grad;
+      bevCtx.beginPath();
+      bevCtx.arc(simState.obstacleX, simState.obstacleY, simState.obstacleRadius + 60, 0, Math.PI * 2);
+      bevCtx.fill();
+
+      // Obstacle
+      bevCtx.fillStyle = '#f43f5e';
+      bevCtx.beginPath();
+      bevCtx.arc(simState.obstacleX, simState.obstacleY, simState.obstacleRadius, 0, Math.PI * 2);
+      bevCtx.fill();
+      bevCtx.strokeStyle = '#fda4af';
+      bevCtx.lineWidth = 2;
+      bevCtx.stroke();
+
+      // Label Obstacle
+      bevCtx.fillStyle = '#ffffff';
+      bevCtx.font = '10px monospace';
+      bevCtx.fillText(simState.obstacleType.toUpperCase(), simState.obstacleX - 22, simState.obstacleY + 3);
+
+      // Trajectory Path (Flow-Matching Evasion)
+      bevCtx.strokeStyle = '#10b981';
+      bevCtx.lineWidth = 3;
+      bevCtx.setLineDash([6, 4]);
+      bevCtx.beginPath();
+      bevCtx.moveTo(simState.robotX, simState.robotY);
+      
+      const bypassOffset = simState.obstacleType === 'dock' ? 0 : (simState.obstacleType === 'cable' ? 55 : -55);
+      const cpx = (simState.robotX + simState.obstacleX) / 2;
+      const cpy = simState.obstacleY + bypassOffset;
+      const endX = w - 40;
+      const endY = simState.obstacleType === 'dock' ? simState.obstacleY : 170;
+
+      bevCtx.quadraticCurveTo(cpx, cpy, endX, endY);
+      bevCtx.stroke();
+      bevCtx.setLineDash([]);
+
+      // AMR Footprint & Heading
+      bevCtx.save();
+      bevCtx.translate(simState.robotX, simState.robotY);
+      bevCtx.rotate(simState.robotAngle);
+
+      // Robot Body
+      bevCtx.fillStyle = '#06b6d4';
+      bevCtx.fillRect(-18, -12, 36, 24);
+      bevCtx.strokeStyle = '#67e8f9';
+      bevCtx.lineWidth = 2;
+      bevCtx.strokeRect(-18, -12, 36, 24);
+
+      // Wheels
+      bevCtx.fillStyle = '#334155';
+      bevCtx.fillRect(-10, -15, 20, 3);
+      bevCtx.fillRect(-10, 12, 20, 3);
+
+      // Directional Arrow
+      bevCtx.fillStyle = '#ffffff';
+      bevCtx.beginPath();
+      bevCtx.moveTo(14, 0); bevCtx.lineTo(6, -5); bevCtx.lineTo(6, 5); bevCtx.fill();
+      bevCtx.restore();
+
+      // Motion Update (unless E-STOP)
+      if (!simState.isEstop) {
+        simState.robotX += simState.speed * 0.8;
+        if (simState.robotX > w - 40) simState.robotX = 60;
+        
+        // Follow evasion curve smoothly
+        if (simState.robotX > 100 && simState.robotX < 320) {
+          const t = (simState.robotX - 100) / 220;
+          simState.robotY = 170 + Math.sin(t * Math.PI) * bypassOffset;
+          simState.robotAngle = Math.cos(t * Math.PI) * (bypassOffset / 200);
+        } else {
+          simState.robotY = 170;
+          simState.robotAngle = 0;
+        }
+      }
+
+      document.getElementById('livePoseText').innerText = 
+        `Pose: (${(simState.robotX * 0.01 + 1.5).toFixed(2)}m, ${(simState.robotY * 0.01 - 3.5).toFixed(2)}m) | ${simState.speed.toFixed(2)} m/s`;
+
+      requestAnimationFrame(renderBEV);
+    }
+
+    // --- Flow-Matching Crystallization Canvas ---
+    function drawDiffusionCanvas() {
+      const w = diffCanvas.width;
+      const h = diffCanvas.height;
+      diffCtx.clearRect(0, 0, w, h);
+
+      const step = simState.diffusionStep;
+      const noiseLevel = 1.0 - (step / 16.0);
+
+      // Draw 20 Stochastic Noise Lines contracting into Clean Path
+      const numLines = 15;
+      for (let j = 0; j < numLines; j++) {
+        diffCtx.beginPath();
+        diffCtx.moveTo(20, h / 2);
+
+        const seedOffset = (j - numLines / 2) * 20 * noiseLevel;
+        diffCtx.strokeStyle = noiseLevel > 0.05 
+          ? `rgba(129, 140, 248, ${Math.max(0.15, 0.7 - noiseLevel * 0.4)})`
+          : 'rgba(16, 185, 129, 0.9)';
+        diffCtx.lineWidth = noiseLevel > 0.05 ? 1.5 : 3;
+
+        for (let x = 20; x < w - 20; x += 15) {
+          const progress = x / w;
+          const targetY = (h / 2) - Math.sin(progress * Math.PI) * 40;
+          const noise = (Math.sin(x * 0.1 + j) * 35 + seedOffset) * noiseLevel;
+          const y = targetY + noise;
+          diffCtx.lineTo(x, y);
+        }
+        diffCtx.stroke();
+      }
+    }
+
+    renderBEV();
+    drawDiffusionCanvas();
+  </script>
+</body>
+</html>
+

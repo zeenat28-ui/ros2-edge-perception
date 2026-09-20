@@ -1,0 +1,16 @@
+{
+  "num_episodes": 10,
+  "execution_duration_sec": 0.39,
+  "success_rate_pct": 100.0,
+  "kinematic_jerk": {
+    "mean": 38.41,
+    "std": 21.07,
+    "ci95_margin": 13.06,
+    "dwa_baseline": 252.8,
+    "jerk_reduction_pct": 84.8,
+    "p_value": 1.0
+  },
+  "mean_latency_ms": 36.77,
+  "mean_min_clearance_m": 3.156,
+  "decision": "APPROVED"
+}

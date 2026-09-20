@@ -1,0 +1,58 @@
+name: ROS 2 Perception CI/CD
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    name: Build & Test (ROS 2 Humble)
+    runs-on: ubuntu-22.04
+
+    container:
+      image: ros:humble-ros-base
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install System Dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            python3-pip \
+            python3-colcon-common-extensions \
+            ros-humble-vision-msgs \
+            ros-humble-cv-bridge \
+            ros-humble-diagnostic-msgs \
+            libgl1-mesa-glx \
+            libglib2.0-0
+          rm -rf /var/lib/apt/lists/*
+
+      - name: Install Python Dependencies
+        run: |
+          pip3 install --no-cache-dir \
+            "numpy>=1.22.0,<2.0.0" \
+            "opencv-python-headless>=4.8.0" \
+            "onnxruntime>=1.16.0" \
+            "pytest>=7.0.0"
+
+      - name: Download & Verify YOLOv8n ONNX Model
+        run: |
+          python3 models/download_model.py
+
+      - name: Run Enterprise Unit & Integration Test Suite
+        run: |
+          python3 -m pytest tests/ -v
+
+      - name: Build ROS 2 Package with Colcon
+        run: |
+          mkdir -p /ros2_ws/src
+          cp -r . /ros2_ws/src/ros2_edge_perception
+          cd /ros2_ws
+          . /opt/ros/humble/setup.sh
+          colcon build --symlink-install --packages-select ros2_edge_perception
+          colcon test --packages-select ros2_edge_perception
+          colcon test-result --verbose
+
